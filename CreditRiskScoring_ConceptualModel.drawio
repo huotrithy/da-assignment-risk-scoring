@@ -1,0 +1,126 @@
+<mxfile host="app.diagrams.net" agent="claude-code">
+  <diagram name="Conceptual Model" id="creditRiskConceptual">
+    <mxGraphModel dx="1406" dy="780" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="iOc24g9wgJ7jmthBOP3x-3" edge="1" parent="1" source="customer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fillColor=#f0a30a;strokeColor=#BD7000;" target="application">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1080.03" y="515.03" />
+              <mxPoint x="1080.03" y="360" />
+              <mxPoint x="1120.03" y="360" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="iOc24g9wgJ7jmthBOP3x-5" connectable="0" parent="iOc24g9wgJ7jmthBOP3x-3" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontColor=light-dark(#000000,#C17F1F);" value="&lt;span style=&quot;&quot;&gt;submits (1-M)&lt;/span&gt;" vertex="1">
+          <mxGeometry relative="1" x="-0.3518" y="-1" as="geometry">
+            <mxPoint y="-16" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="customer" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1" value="Customer" vertex="1">
+          <mxGeometry height="70" width="160" x="720" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="account" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Account" vertex="1">
+          <mxGeometry height="60" width="140" x="550" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="transaction" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Transaction" vertex="1">
+          <mxGeometry height="60" width="190" x="330" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="balancehistory" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Account Balance History" vertex="1">
+          <mxGeometry height="60" width="190" x="330" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="income" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Income Source" vertex="1">
+          <mxGeometry height="60" width="180" x="340" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="application" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Loan Application" vertex="1">
+          <mxGeometry height="60" width="170" x="1035" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="product" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Loan Product" vertex="1">
+          <mxGeometry height="60" width="160" x="1290" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="score" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontStyle=1" value="Risk Score" vertex="1">
+          <mxGeometry height="60" width="160" x="1040" y="640" as="geometry" />
+        </mxCell>
+        <mxCell id="loanaccount" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Loan Account" vertex="1">
+          <mxGeometry height="60" width="160" x="720" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="payment" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Payment History" vertex="1">
+          <mxGeometry height="60" width="170" x="510" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="delinquency" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" value="Delinquency / Default Event" vertex="1">
+          <mxGeometry height="60" width="180" x="710" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="collateral" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;fontSize=12" value="Collateral (optional)" vertex="1">
+          <mxGeometry height="60" width="170" x="930" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="customer" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;" target="account" value="owns (1-M)">
+          <mxGeometry relative="1" x="-0.0169" y="-30" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="account" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;" target="transaction" value="generates (1-M)">
+          <mxGeometry relative="1" x="-0.2" y="-20" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2b" edge="1" parent="1" source="account" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;" target="balancehistory" value="records (1-M)">
+          <mxGeometry relative="1" x="-0.1795" y="20" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="customer" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;" target="income" value="declares (1-M)">
+          <mxGeometry relative="1" x="-0.0302" y="-15" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="application" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;" target="product" value="is for (M-1)">
+          <mxGeometry relative="1" y="-20" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="application" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=block;fillColor=#fa6800;strokeColor=#C73500;fontColor=light-dark(#000000,#FF9164);" target="score" value="triggers (1—1)">
+          <mxGeometry relative="1" y="45" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="customer" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;fillColor=#1ba1e2;strokeColor=#006EAF;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="score" value="accumulates (1-M)">
+          <mxGeometry relative="1" x="-0.0725" y="-25" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="800.03" y="570" />
+              <mxPoint x="1120.03" y="570" />
+              <mxPoint x="1120.03" y="620" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="application" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=block;fillColor=#60a917;strokeColor=#2D7600;" target="loanaccount" value="becomes (1-1)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="loanaccount" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;" target="payment" value="tracks (1-M)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="loanaccount" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;" target="delinquency" value="raises (1-M)">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="loanaccount" style="edgeStyle=orthogonalEdgeStyle;html=1;fontSize=11;endArrow=block;startArrow=none;dashed=1;" target="collateral" value="is secured by (1-M)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="iOc24g9wgJ7jmthBOP3x-7" connectable="0" parent="1" style="group" value="" vertex="1">
+          <mxGeometry height="80" width="240" x="1160" y="800" as="geometry" />
+        </mxCell>
+        <mxCell id="legend1" parent="iOc24g9wgJ7jmthBOP3x-7" style="text;html=1;fontStyle=1;fontSize=13;" value="Legend" vertex="1">
+          <mxGeometry height="30" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="legend2" parent="iOc24g9wgJ7jmthBOP3x-7" style="text;html=1;fontSize=11;" value="verb (1-M) = One-to-Many" vertex="1">
+          <mxGeometry height="25" width="240" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="legend3" parent="iOc24g9wgJ7jmthBOP3x-7" style="text;html=1;fontSize=11;" value="verb (1-1) = One-to-One" vertex="1">
+          <mxGeometry height="25" width="240" y="55" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
