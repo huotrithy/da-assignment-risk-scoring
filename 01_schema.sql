@@ -4,6 +4,7 @@
 -- Mirrors the 13 conceptual entities from Part1_Conceptual_Business_Model.md
 -- ============================================================================
 
+DROP TABLE IF EXISTS calculated_risk_score CASCADE;
 DROP TABLE IF EXISTS collateral CASCADE;
 DROP TABLE IF EXISTS delinquency_event CASCADE;
 DROP TABLE IF EXISTS payment_history CASCADE;
@@ -123,4 +124,23 @@ CREATE TABLE collateral (
     loan_account_id INT NOT NULL REFERENCES loan_account(loan_account_id),
     collateral_type TEXT NOT NULL,
     estimated_value NUMERIC(12,2) NOT NULL
+);
+
+-- ============================================================================
+-- Part 3: computed scorecard output (see docs/Scoring_Methodology.md).
+-- Kept separate from risk_score (the mock/seeded score) so the two can be
+-- compared side by side rather than one overwriting the other.
+-- ============================================================================
+CREATE TABLE calculated_risk_score (
+    calc_score_id               SERIAL PRIMARY KEY,
+    customer_id                 INT NOT NULL REFERENCES customer(customer_id),
+    payment_behavior_points     NUMERIC(5,2),
+    income_capacity_points      NUMERIC(5,2),
+    transaction_behavior_points NUMERIC(5,2),
+    account_relationship_points NUMERIC(5,2),
+    demographics_points         NUMERIC(5,2),
+    composite_score             NUMERIC(5,2) NOT NULL,
+    calculated_score_value      INT NOT NULL CHECK (calculated_score_value BETWEEN 300 AND 850),
+    calculated_risk_grade       CHAR(1) NOT NULL CHECK (calculated_risk_grade IN ('A','B','C','D','E')),
+    calculated_date             DATE NOT NULL DEFAULT CURRENT_DATE
 );
