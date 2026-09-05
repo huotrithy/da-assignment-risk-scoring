@@ -4,7 +4,7 @@
 // Grounding: Loan Application / Risk Score / Loan Account / Payment History /
 // Delinquency values are bootstrap-sampled (age, credit amount, duration,
 // good/bad label) from the real UCI "Statlog German Credit Data" dataset in
-// reference_data/german_credit.data — see reference_data/ATTRIBUTION.md.
+// bootstrap/german_credit.data — see bootstrap/ATTRIBUTION.md.
 // Customer / Account / Transaction / Balance History have no equivalent in
 // that dataset and remain fully synthetic, driven by a per-customer risk
 // bucket (customer_id % 5: 0,1=low risk, 2,3=medium risk, 4=high risk).
@@ -23,7 +23,7 @@ if (fs.existsSync(DB_PATH)) fs.unlinkSync(DB_PATH);
 // ---------------------------------------------------------------------------
 // Load + parse the UCI German Credit dataset
 // ---------------------------------------------------------------------------
-const rawLines = fs.readFileSync(path.join(DIR, 'reference_data', 'german_credit.data'), 'utf8')
+const rawLines = fs.readFileSync(path.join(DIR, 'bootstrap', 'german_credit.data'), 'utf8')
     .trim().split('\n');
 const german = rawLines.map(line => {
     const f = line.trim().split(/\s+/);

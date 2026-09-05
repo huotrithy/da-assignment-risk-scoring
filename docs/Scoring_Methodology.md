@@ -123,6 +123,14 @@ Loan approval policy (also already reflected in the mock data): applications
 scoring **≥600 (grade A/B/C)** are approved; **D/E are rejected** and never
 progress to `loan_account`.
 
+**Simplification vs. real-world practice:** many real scorecards route the
+borderline grade (here, C) to manual/underwriter review rather than
+auto-approving it alongside A/B, with only the clear-cut top grades approved
+straight through. This assignment uses a simpler binary approve/reject split
+(A/B/C vs. D/E) to keep the mock dataset and approval logic easy to reason
+about; the schema's `loan_application.status` CHECK constraint does allow a
+`'pending'` value if a three-way policy were introduced later.
+
 ## 5. Relationship to the Mock Dataset
 
 The current `generate_data.js` does not literally run this formula — it

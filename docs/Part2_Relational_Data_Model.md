@@ -36,26 +36,52 @@ every `loan_application` row that references it).
 
 ## 3. Primary Key / Foreign Key Reference
 
-| Table | Primary Key | Foreign Keys | References |
-|---|---|---|---|
-| `customer` | `customer_id` | — | — |
-| `income_source` | `income_id` | `customer_id` | `customer.customer_id` |
-| `account` | `account_id` | `customer_id` | `customer.customer_id` |
-| `transaction` | `transaction_id` | `account_id` | `account.account_id` |
-| `account_balance_history` | `balance_history_id` | `account_id` | `account.account_id` |
-| `loan_product` | `product_id` | — | — |
-| `loan_offer` | `offer_id` | `customer_id`, `product_id` | `customer.customer_id`, `loan_product.product_id` |
-| `loan_application` | `application_id` | `customer_id`, `product_id` | `customer.customer_id`, `loan_product.product_id` |
-| `risk_score` | `score_id` | `customer_id`, `application_id` (nullable) | `customer.customer_id`, `loan_application.application_id` |
-| `loan_account` | `loan_account_id` | `application_id` (unique — enforces 1:1) | `loan_application.application_id` |
-| `payment_history` | `payment_id` | `loan_account_id` | `loan_account.loan_account_id` |
-| `delinquency_event` | `event_id` | `loan_account_id` | `loan_account.loan_account_id` |
-| `collateral` | `collateral_id` | `loan_account_id` | `loan_account.loan_account_id` |
+| Table | Primary Key | Key Type | Foreign Keys | References |
+|---|---|---|---|---|
+| `customer` | `customer_id` | Surrogate (`SERIAL`) | — | — |
+| `income_source` | `income_id` | Surrogate (`SERIAL`) | `customer_id` | `customer.customer_id` |
+| `account` | `account_id` | Surrogate (`SERIAL`) | `customer_id` | `customer.customer_id` |
+| `transaction` | `transaction_id` | Surrogate (`SERIAL`) | `account_id` | `account.account_id` |
+| `account_balance_history` | `balance_history_id` | Surrogate (`SERIAL`) | `account_id` | `account.account_id` |
+| `loan_product` | `product_id` | Surrogate (`SERIAL`) | — | — |
+| `loan_offer` | `offer_id` | Surrogate (`SERIAL`) | `customer_id`, `product_id` | `customer.customer_id`, `loan_product.product_id` |
+| `loan_application` | `application_id` | Surrogate (`SERIAL`) | `customer_id`, `product_id` | `customer.customer_id`, `loan_product.product_id` |
+| `risk_score` | `score_id` | Surrogate (`SERIAL`) | `customer_id`, `application_id` (nullable) | `customer.customer_id`, `loan_application.application_id` |
+| `loan_account` | `loan_account_id` | Surrogate (`SERIAL`) | `application_id` (unique — enforces 1:1) | `loan_application.application_id` |
+| `payment_history` | `payment_id` | Surrogate (`SERIAL`) | `loan_account_id` | `loan_account.loan_account_id` |
+| `delinquency_event` | `event_id` | Surrogate (`SERIAL`) | `loan_account_id` | `loan_account.loan_account_id` |
+
+Every table uses a surrogate integer key (`SERIAL`), not a natural key —
+deliberately, since the one natural-key candidate in the model
+(`customer.national_id`) is still stored as a `UNIQUE` attribute on
+`customer` rather than promoted to primary key: national ID formats vary
+and could theoretically change/be corrected for a customer, which would be
+disruptive if every child table's foreign keys were built on it directly.
 
 Enum-like columns (`status`, `income_type`, `account_type`, `event_type`,
 `risk_grade`) are constrained with `CHECK` clauses in `01_schema.sql` rather
 than separate lookup tables — a deliberate simplification, since these value
 sets are small, fixed, and not expected to grow or need their own metadata.
+
+## 3.1 Likely Source System per Table
+
+Since this is a mock dataset, no real source system actually feeds it — but
+in a production bank, each table would realistically originate from:
+
+| Table | Likely Source System |
+|---|---|
+| `customer` | Core Banking System's Customer Information File (CIF), populated during branch/app onboarding and KYC |
+| `income_source` | Loan Origination System (declared at application time) or CRM (self-declared/updated by the customer) |
+| `account` | Core Banking System's deposit/account management module |
+| `transaction` | Core Banking System / payment switch — the system of record for account movements |
+| `account_balance_history` | Core Banking System's nightly batch job that snapshots end-of-day balances |
+| `loan_product` | Product catalog maintained within the Loan Origination System (LOS) |
+| `loan_offer` | CRM / marketing campaign engine that runs the periodic proactive-offer scan |
+| `loan_application` | Loan Origination System (LOS) |
+| `risk_score` | Credit scoring / decision engine (rules or model service called by the LOS) |
+| `loan_account` | Loan Management System (LMS) — loan servicing module, post-disbursement |
+| `payment_history` | Loan Management System (LMS) — installment schedule and collection module |
+| `delinquency_event` | Collections system, fed by the LMS once a payment is missed past a threshold |
 
 ## 4. Feature → Analytic Question → Risk Score Linkage
 
@@ -87,7 +113,7 @@ The database is populated with **synthetic data**, generated by
   the good/bad outcome label are bootstrap-sampled from the UCI *Statlog
   German Credit Data* (1000 real historical applications) rather than
   invented from arbitrary ranges — see
-  [`reference_data/ATTRIBUTION.md`](../reference_data/ATTRIBUTION.md) for
+  [`bootstrap/ATTRIBUTION.md`](../bootstrap/ATTRIBUTION.md) for
   full citation and rationale.
 - **Everything else** (customer names, transaction categories/amounts,
   balance trends, account tenure) is fully synthetic, generated with
