@@ -1,3 +1,5 @@
+node_modules
+
 private_key.pem
 .env.*
 !.env.example

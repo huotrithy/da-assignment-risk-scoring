@@ -10,6 +10,7 @@
 // bucket (customer_id % 5: 0,1=low risk, 2,3=medium risk, 4=high risk).
 
 const { DatabaseSync } = require('node:sqlite');
+const { faker } = require('@faker-js/faker');
 const fs = require('fs');
 const path = require('path');
 
@@ -34,10 +35,14 @@ const german = rawLines.map(line => {
     };
 });
 
-function sampleGerman() { return german[Math.floor(Math.random() * german.length)]; }
-function rint(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
-function rnd(a, b) { return a + Math.random() * (b - a); }
-function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+// RNG primitives backed by Faker (faker.js has no Khmer locale, so names stay
+// on the curated arrays below — Faker is used for numeric/date/pick realism
+// and for fields where a library-shaped value is genuinely more convincing).
+function sampleGerman() { return faker.helpers.arrayElement(german); }
+function rint(a, b) { return faker.number.int({ min: a, max: b }); }
+function rnd(a, b) { return faker.number.float({ min: a, max: b, fractionDigits: 2 }); }
+function pick(arr) { return faker.helpers.arrayElement(arr); }
+function chance(p) { return faker.datatype.boolean({ probability: p }); }
 function round2(n) { return Math.round(n * 100) / 100; }
 
 function addDays(base, days) {
@@ -150,6 +155,11 @@ CREATE TABLE collateral (
 );
 `);
 
+// All inserts below run inside one transaction — without this, SQLite fsyncs
+// on every single autocommit insert, which turns tens of thousands of rows
+// into a multi-minute run.
+db.exec('BEGIN');
+
 // ---------------------------------------------------------------------------
 // PG export buffer — mirrors every insert below, in Postgres-compatible SQL
 // ---------------------------------------------------------------------------
@@ -174,6 +184,10 @@ const products = [
     ['Home Improvement Loan', 11.00, 1000, 20000, 36],
     ['Salary Advance', 18.00, 200, 2000, 6],
     ['Business Micro-Loan', 15.25, 1000, 15000, 36],
+    ['Education Loan', 8.50, 1000, 25000, 48],
+    ['Medical Loan', 12.75, 500, 12000, 24],
+    ['Debt Consolidation Loan', 13.90, 1000, 18000, 36],
+    ['Wedding Loan', 16.00, 500, 8000, 18],
 ];
 const insProduct = db.prepare(`INSERT INTO loan_product (product_name, interest_rate, min_amount, max_amount, tenor_months) VALUES (?,?,?,?,?)`);
 products.forEach(p => {
@@ -186,21 +200,35 @@ const productRows = db.prepare('SELECT * FROM loan_product').all();
 // 2. Customer (age bootstrap-sampled from German Credit Data)
 // ---------------------------------------------------------------------------
 const FIRST = ['Sokha','Dara','Piseth','Ratana','Sophea','Chanthou','Vichea','Sreymom','Bopha','Vuthy',
-               'Kunthea','Rithy','Malis','Panha','Sotheara','Chenda','Makara','Sreynich','Veasna','Kimlong'];
+               'Kunthea','Rithy','Malis','Panha','Sotheara','Chenda','Makara','Sreynich','Veasna','Kimlong',
+               'Sovann','Chariya','Bunthoeun','Kalliyan','Ponleu','Rachana','Sambath','Thida','Vannak','Chakriya',
+               'Sreyleak','Pisach','Channary','Sokun','Mengly','Reaksmey','Sopheak','Bunroeun','Chanreaksmey','Kosal',
+               'Leakhena','Narith','Oudom','Pheakdey','Rasmey','Sina','Tola','Udom','Virak','Yuthea'];
 const LAST = ['Chan','Sok','Heng','Meas','Pich','Ly','Chea','Kim','San','Vong',
-              'Nou','Sen','Iv','Touch','Keo','Long','Nhem','Roeun','Suon','Yin'];
+              'Nou','Sen','Iv','Touch','Keo','Long','Nhem','Roeun','Suon','Yin',
+              'Vann','Ouk','Prak','Ros','Sarin','Thou','Ung','Vuth','Yem','Ang',
+              'Chhay','Dy','Eng','Hor','Im','Khun','Lim','Mao','Nget','Or',
+              'Phon','Reth','Sath','Tep','Uch','Var','Yoeun','Chhun','Deth','Ek'];
 
-const N_CUSTOMERS = 200;
+const N_CUSTOMERS = 800;
 const insCustomer = db.prepare(`INSERT INTO customer (full_name, date_of_birth, national_id, customer_since_date) VALUES (?,?,?,?)`);
 const customers = [];
+const usedNationalIds = new Set();
+function uniqueNationalId() {
+    let id;
+    do { id = 'NID' + faker.string.numeric(9); } while (usedNationalIds.has(id));
+    usedNationalIds.add(id);
+    return id;
+}
 for (let i = 1; i <= N_CUSTOMERS; i++) {
     const age = sampleGerman().age; // real age distribution
-    const dob = new Date(TODAY); dob.setFullYear(dob.getFullYear() - age); dob.setDate(rint(1, 28));
+    // faker.date.birthdate picks a realistic month/day for the exact target
+    // age (leap years etc. handled correctly) instead of a manually capped range
+    const dobStr = faker.date.birthdate({ min: age, max: age, mode: 'age', refDate: TODAY }).toISOString().slice(0, 10);
     const sinceDaysAgo = rint(180, 3650);
     const sinceDate = addDays(TODAY, -sinceDaysAgo);
     const fullName = `${pick(FIRST)} ${pick(LAST)}`;
-    const nationalId = 'NID' + String(i).padStart(9, '0');
-    const dobStr = dob.toISOString().slice(0, 10);
+    const nationalId = uniqueNationalId();
     insCustomer.run(fullName, dobStr, nationalId, sinceDate);
     pgInsert('customer', ['full_name', 'date_of_birth', 'national_id', 'customer_since_date'], [fullName, dobStr, nationalId, sinceDate]);
     customers.push({ id: i, bucket: i % 5, sinceDate });
@@ -218,7 +246,7 @@ customers.forEach(c => {
     const type = c.bucket === 4 ? pick(['salary', 'other']) : pick(['salary', 'business']);
     const amount = c.bucket <= 1 ? round2(rnd(1200, 3000)) : c.bucket <= 3 ? round2(rnd(600, 1500)) : round2(rnd(300, 900));
     addIncome(c.id, type, amount, addDays(c.sinceDate, rint(0, 180)));
-    if (c.bucket <= 3 && Math.random() < 0.3) {
+    if (c.bucket <= 3 && chance(0.3)) {
         addIncome(c.id, 'rental', round2(rnd(150, 600)), addDays(c.sinceDate, rint(0, 365)));
     }
 });
@@ -234,7 +262,7 @@ customers.forEach(c => {
     pgInsert('account', ['customer_id', 'account_type', 'open_date', 'status'], [c.id, 'savings', c.sinceDate, 'active']);
     accounts.push({ id: accId1, customerId: c.id, bucket: c.bucket });
 
-    if (Math.random() < 0.35) {
+    if (chance(0.35)) {
         const openDate = addDays(c.sinceDate, rint(0, 365));
         insAccount.run(c.id, 'current', openDate, 'active');
         const accId2 = db.prepare('SELECT last_insert_rowid() AS id').get().id;
@@ -244,15 +272,17 @@ customers.forEach(c => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. Transaction (~15 per account)
+// 5. Transaction (~20 per account, over a wider 12-month window for more variety)
 // ---------------------------------------------------------------------------
-const CATEGORIES = ['income', 'groceries', 'utilities', 'rent', 'transfer', 'entertainment', 'healthcare'];
+const CATEGORIES = ['income', 'groceries', 'utilities', 'rent', 'transfer', 'entertainment', 'healthcare',
+                     'transport', 'education', 'insurance', 'dining', 'shopping', 'fuel', 'subscription',
+                     'travel', 'atm_withdrawal'];
 const insTxn = db.prepare(`INSERT INTO "transaction" (account_id, transaction_date, amount, category) VALUES (?,?,?,?)`);
 accounts.forEach(a => {
-    for (let n = 0; n < 15; n++) {
+    for (let n = 0; n < 20; n++) {
         const cat = pick(CATEGORIES);
-        const amount = cat === 'income' ? round2(rnd(300, 2300)) : round2(-rnd(20, 420));
-        const date = addDays(TODAY, -rint(0, 180));
+        const amount = cat === 'income' ? round2(rnd(300, 2300)) : round2(-rnd(10, 450));
+        const date = addDays(TODAY, -rint(0, 365));
         insTxn.run(a.id, date, amount, cat);
         pgInsert('transaction', ['account_id', 'transaction_date', 'amount', 'category'], [a.id, date, amount, cat]);
     }
@@ -278,7 +308,7 @@ accounts.forEach(a => {
 const insOffer = db.prepare(`INSERT INTO loan_offer (customer_id, product_id, offer_date, status) VALUES (?,?,?,?)`);
 const offerRecipients = [];
 customers.forEach(c => {
-    if (c.bucket <= 3 && Math.random() < 0.3) {
+    if (c.bucket <= 3 && chance(0.3)) {
         const product = pick(productRows);
         const status = pick(['pending', 'accepted', 'declined', 'expired']);
         const offerDate = addDays(TODAY, -rint(0, 90));
@@ -306,7 +336,7 @@ function gradeFor(score) {
 
 const loanAccounts = [];
 customers.forEach(c => {
-    if (Math.random() >= 0.4) return; // ~40% of customers submit an application
+    if (!chance(0.4)) return; // ~40% of customers submit an application
 
     const g = sampleGerman(); // real amount / duration / good-bad label
     // Pick the product whose tenor is closest to the sampled real duration
@@ -332,12 +362,18 @@ customers.forEach(c => {
     if (status === 'approved') {
         const disbDate = addDays(appDate, 5);
         const outstanding = round2(requestedAmount * rnd(0.3, 1.0));
-        const loanStatus = c.bucket === 4 && Math.random() < 0.5 ? 'delinquent' : Math.random() < 0.1 ? 'closed' : 'current';
+        // Delinquency risk follows the actual score/grade, not an unrelated bucket.
+        // Approved applications are always grade A/B/C (status requires score >= 600),
+        // so risk still increases monotonically as grade worsens, with a small
+        // non-zero chance even for A/B (real prime borrowers occasionally default too).
+        const delinquencyChance = grade === 'A' ? 0.02 : grade === 'B' ? 0.05 : 0.20;
+        const risky = chance(delinquencyChance);
+        const loanStatus = risky ? 'delinquent' : chance(0.1) ? 'closed' : 'current';
         insLoanAcct.run(applicationId, requestedAmount, disbDate, outstanding, loanStatus);
         const loanAccountId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
         pgInsert('loan_account', ['application_id', 'principal_amount', 'disbursement_date', 'outstanding_balance', 'status'],
             [applicationId, requestedAmount, disbDate, outstanding, loanStatus]);
-        loanAccounts.push({ id: loanAccountId, disbDate, principal: requestedAmount, status: loanStatus, bucket: c.bucket, productId: product.product_id, productName: product.product_name });
+        loanAccounts.push({ id: loanAccountId, disbDate, principal: requestedAmount, status: loanStatus, risky, grade, productId: product.product_id, productName: product.product_name });
     }
 });
 
@@ -352,7 +388,7 @@ offerRecipients.forEach(r => {
 });
 
 // ---------------------------------------------------------------------------
-// 11. Payment History (monthly installments; high-risk bucket -> late/missed)
+// 11. Payment History (monthly installments; risky/delinquent accounts -> late/missed)
 // ---------------------------------------------------------------------------
 const insPay = db.prepare(`INSERT INTO payment_history (loan_account_id, due_date, amount_due, amount_paid, status) VALUES (?,?,?,?,?)`);
 loanAccounts.forEach(la => {
@@ -360,8 +396,8 @@ loanAccounts.forEach(la => {
     for (let m = 1; m <= 6; m++) {
         const dueDate = addDays(la.disbDate, m * 30);
         let paid = installment, status = 'on_time';
-        if (la.bucket === 4) {
-            const roll = Math.random();
+        if (la.risky) {
+            const roll = faker.number.float({ min: 0, max: 1, fractionDigits: 4 });
             if (roll < 0.3) { paid = 0; status = 'missed'; }
             else if (roll < 0.5) { paid = round2(installment * 0.6); status = 'late'; }
         }
@@ -387,13 +423,15 @@ loanAccounts.filter(la => la.status === 'delinquent').forEach(la => {
 // 13. Collateral (secured products only)
 // ---------------------------------------------------------------------------
 const insCollateral = db.prepare(`INSERT INTO collateral (loan_account_id, collateral_type, estimated_value) VALUES (?,?,?)`);
-loanAccounts.filter(la => ['Auto Loan', 'Home Improvement Loan'].includes(la.productName) && Math.random() < 0.7)
+loanAccounts.filter(la => ['Auto Loan', 'Home Improvement Loan'].includes(la.productName) && chance(0.7))
     .forEach(la => {
         const type = la.productName === 'Auto Loan' ? 'vehicle' : 'property';
         const value = round2(la.principal * rnd(1.1, 1.5));
         insCollateral.run(la.id, type, value);
         pgInsert('collateral', ['loan_account_id', 'collateral_type', 'estimated_value'], [la.id, type, value]);
     });
+
+db.exec('COMMIT');
 
 // ---------------------------------------------------------------------------
 // Write Postgres export + print summary
