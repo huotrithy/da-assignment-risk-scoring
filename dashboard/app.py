@@ -11,6 +11,7 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 import streamlit as st
 
 st.set_page_config(page_title="Credit Risk Scorecard", page_icon="📊", layout="wide")
@@ -67,8 +68,20 @@ def database_url() -> str:
     return url.replace("postgresql+psycopg://", "postgresql://")
 
 
+def connect():
+    """Fail fast with a readable message instead of hanging when the database is unreachable."""
+    url = database_url()
+    try:
+        return psycopg.connect(url, connect_timeout=int(os.environ.get("DB_CONNECT_TIMEOUT", "10")))
+    except psycopg.OperationalError as e:
+        host = conninfo_to_dict(url).get("host", "?")
+        st.error(f"Cannot connect to the database at **{host}**. Check that this server can reach it "
+                 f"(network / firewall / VPN) and that DATABASE_URL is correct.\n\n`{str(e).strip()}`")
+        st.stop()
+
+
 def query(sql: str, params=None) -> pd.DataFrame:
-    with psycopg.connect(database_url()) as conn, conn.cursor() as cur:
+    with connect() as conn, conn.cursor() as cur:
         cur.execute(sql, params)
         cols = [c.name for c in cur.description]
         df = pd.DataFrame(cur.fetchall(), columns=cols)
