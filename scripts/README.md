@@ -32,8 +32,14 @@ B/C regardless.
 
 **Already run against the live instance** (`192.168.100.93` /
 `da-assignment-risk-scoring`) as of this version: 800 customers scored,
-grade distribution A:27 · B:219 · C:435 · D:117 · E:2 — a realistic
+grade distribution A:35 · B:200 · C:413 · D:151 · E:1 — a realistic
 bell-shaped skew with all five grades represented. Correlation against the
 mock `risk_score` is expected to be modest, not high — the mock score was
 seeded independently by bootstrap-sampling the UCI dataset, not computed
 from this formula (see `docs/Scoring_Methodology.md` §5).
+
+Quartile ties are broken by `customer_id`, so re-running script 06 on the same
+data gives identical results. The data itself is reproducible too:
+`generate_data.js` uses a fixed seed and as-of date (2026-10-03), and only
+creates payments, delinquency events and loan statuses that are consistent
+with that date.

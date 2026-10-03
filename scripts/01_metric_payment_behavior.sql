@@ -59,4 +59,5 @@ SELECT
     END AS points_delinquency
 FROM pct_on_time p
 JOIN worst_delinquency w ON w.customer_id = p.customer_id
+WHERE p.pct_on_time IS NOT NULL  -- no installment due yet = no repayment record (scored as first-time, same as script 06)
 ORDER BY p.customer_id;

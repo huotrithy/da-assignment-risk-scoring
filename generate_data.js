@@ -45,14 +45,20 @@ function pick(arr) { return faker.helpers.arrayElement(arr); }
 function chance(p) { return faker.datatype.boolean({ probability: p }); }
 function round2(n) { return Math.round(n * 100) / 100; }
 
+// Reproducible runs: same seed + same as-of date => identical data.
+// Override with AS_OF=YYYY-MM-DD / SEED=n if needed.
+const SEED = +(process.env.SEED || 20261003);
+faker.seed(SEED);
+const TODAY = new Date((process.env.AS_OF || '2026-10-03') + 'T00:00:00Z'); // the data's "today"
+const TODAY_STR = TODAY.toISOString().slice(0, 10);
+
+// All dates are UTC calendar dates (no local-timezone drift).
 function addDays(base, days) {
-    const d = new Date(base);
-    d.setDate(d.getDate() + days);
+    const d = new Date(typeof base === 'string' ? base + 'T00:00:00Z' : base);
+    d.setUTCDate(d.getUTCDate() + days);
     return d.toISOString().slice(0, 10);
 }
-
-const TODAY = new Date();
-TODAY.setHours(0, 0, 0, 0);
+function daysAgo(dateStr) { return Math.round((TODAY - new Date(dateStr + 'T00:00:00Z')) / 86400000); }
 
 // ---------------------------------------------------------------------------
 // Schema (SQLite dialect)
@@ -237,17 +243,19 @@ for (let i = 1; i <= N_CUSTOMERS; i++) {
 // ---------------------------------------------------------------------------
 // 3. Income Source
 // ---------------------------------------------------------------------------
+const incomeOf = {}; // customer_id -> total declared monthly income (drives income deposits below)
 const insIncome = db.prepare(`INSERT INTO income_source (customer_id, income_type, monthly_income, effective_date) VALUES (?,?,?,?)`);
 function addIncome(customerId, type, amount, effDate) {
+    incomeOf[customerId] = (incomeOf[customerId] || 0) + amount;
     insIncome.run(customerId, type, amount, effDate);
     pgInsert('income_source', ['customer_id', 'income_type', 'monthly_income', 'effective_date'], [customerId, type, amount, effDate]);
 }
 customers.forEach(c => {
     const type = c.bucket === 4 ? pick(['salary', 'other']) : pick(['salary', 'business']);
     const amount = c.bucket <= 1 ? round2(rnd(1200, 3000)) : c.bucket <= 3 ? round2(rnd(600, 1500)) : round2(rnd(300, 900));
-    addIncome(c.id, type, amount, addDays(c.sinceDate, rint(0, 180)));
+    addIncome(c.id, type, amount, addDays(c.sinceDate, rint(0, Math.min(180, daysAgo(c.sinceDate)))));
     if (c.bucket <= 3 && chance(0.3)) {
-        addIncome(c.id, 'rental', round2(rnd(150, 600)), addDays(c.sinceDate, rint(0, 365)));
+        addIncome(c.id, 'rental', round2(rnd(150, 600)), addDays(c.sinceDate, rint(0, Math.min(365, daysAgo(c.sinceDate)))));
     }
 });
 
@@ -260,31 +268,54 @@ customers.forEach(c => {
     insAccount.run(c.id, 'savings', c.sinceDate, 'active');
     const accId1 = db.prepare('SELECT last_insert_rowid() AS id').get().id;
     pgInsert('account', ['customer_id', 'account_type', 'open_date', 'status'], [c.id, 'savings', c.sinceDate, 'active']);
-    accounts.push({ id: accId1, customerId: c.id, bucket: c.bucket });
+    accounts.push({ id: accId1, customerId: c.id, bucket: c.bucket, openDate: c.sinceDate, primary: true });
 
     if (chance(0.35)) {
-        const openDate = addDays(c.sinceDate, rint(0, 365));
+        const openDate = addDays(c.sinceDate, rint(0, Math.min(365, daysAgo(c.sinceDate))));
         insAccount.run(c.id, 'current', openDate, 'active');
         const accId2 = db.prepare('SELECT last_insert_rowid() AS id').get().id;
         pgInsert('account', ['customer_id', 'account_type', 'open_date', 'status'], [c.id, 'current', openDate, 'active']);
-        accounts.push({ id: accId2, customerId: c.id, bucket: c.bucket });
+        accounts.push({ id: accId2, customerId: c.id, bucket: c.bucket, openDate, primary: false });
     }
 });
 
 // ---------------------------------------------------------------------------
-// 5. Transaction (~20 per account, over a wider 12-month window for more variety)
+// 5. Transaction (last 12 months, never before the account opened)
+//    Primary account: one income deposit per month ~ the customer's declared income.
+//    Spending: a few purchases per month per account; total spend as a share of
+//    income depends on the risk bucket (low-risk customers spend less of what comes in).
 // ---------------------------------------------------------------------------
 const CATEGORIES = ['income', 'groceries', 'utilities', 'rent', 'transfer', 'entertainment', 'healthcare',
                      'transport', 'education', 'insurance', 'dining', 'shopping', 'fuel', 'subscription',
                      'travel', 'atm_withdrawal'];
+const SPEND_CATEGORIES = CATEGORIES.filter(c => c !== 'income');
 const insTxn = db.prepare(`INSERT INTO "transaction" (account_id, transaction_date, amount, category) VALUES (?,?,?,?)`);
-accounts.forEach(a => {
-    for (let n = 0; n < 20; n++) {
-        const cat = pick(CATEGORIES);
-        const amount = cat === 'income' ? round2(rnd(300, 2300)) : round2(-rnd(10, 450));
-        const date = addDays(TODAY, -rint(0, 365));
-        insTxn.run(a.id, date, amount, cat);
-        pgInsert('transaction', ['account_id', 'transaction_date', 'amount', 'category'], [a.id, date, amount, cat]);
+function addTxn(accountId, date, amount, cat) {
+    insTxn.run(accountId, date, amount, cat);
+    pgInsert('transaction', ['account_id', 'transaction_date', 'amount', 'category'], [accountId, date, amount, cat]);
+}
+const accountsOf = {};
+accounts.forEach(a => (accountsOf[a.customerId] = accountsOf[a.customerId] || []).push(a));
+customers.forEach(c => {
+    const accs = accountsOf[c.id];
+    const income = incomeOf[c.id] || 0;
+    // share of monthly income spent: low risk 45-80%, medium 70-100%, high 90-125%
+    const [lo, hi] = c.bucket <= 1 ? [0.45, 0.8] : c.bucket <= 3 ? [0.7, 1.0] : [0.9, 1.25];
+    for (let m = 0; m < 12; m++) {
+        const monthStart = addDays(TODAY, -(m + 1) * 30 + 1); // 30-day windows counting back from today
+        const open = accs.filter(a => a.openDate <= monthStart);
+        if (!open.length) continue;
+        const inMonth = () => addDays(monthStart, rint(0, 29));
+        const primary = open.find(a => a.primary);
+        if (primary && income > 0) addTxn(primary.id, inMonth(), round2(income * rnd(0.95, 1.05)), 'income');
+        const budget = income * rnd(lo, hi);
+        open.forEach(a => {
+            const n = rint(2, 6);
+            for (let k = 0; k < n; k++) {
+                const amount = Math.max(5, budget / open.length / n * rnd(0.6, 1.4));
+                addTxn(a.id, inMonth(), -round2(amount), pick(SPEND_CATEGORIES));
+            }
+        });
     }
 });
 
@@ -297,6 +328,7 @@ accounts.forEach(a => {
         const base = a.bucket <= 1 ? 3000 + w * 25 : a.bucket <= 3 ? 1200 + w * 2 : 900 - w * 15;
         const balance = Math.max(0, round2(base + rnd(-150, 150)));
         const date = addDays(TODAY, -(w * 7));
+        if (date < a.openDate) continue; // no snapshot before the account existed
         insBal.run(a.id, date, balance);
         pgInsert('account_balance_history', ['account_id', 'snapshot_date', 'closing_balance'], [a.id, date, balance]);
     }
@@ -343,7 +375,8 @@ customers.forEach(c => {
     const product = productRows.reduce((best, p) =>
         Math.abs(p.tenor_months - g.duration) < Math.abs(best.tenor_months - g.duration) ? p : best, productRows[0]);
     const requestedAmount = round2(Math.min(product.max_amount, Math.max(product.min_amount, g.amount)));
-    const appDate = addDays(TODAY, -rint(0, 365));
+    // after the customer joined, and at least 5 days ago so the payout (app + 5 days) is not in the future
+    const appDate = addDays(TODAY, -rint(5, Math.max(5, Math.min(365, daysAgo(c.sinceDate)))));
 
     // Real "good"/"bad" label drives the score band
     const scoreValue = g.classLabel === 1 ? rint(650, 820) : rint(350, 590);
@@ -361,19 +394,18 @@ customers.forEach(c => {
 
     if (status === 'approved') {
         const disbDate = addDays(appDate, 5);
-        const outstanding = round2(requestedAmount * rnd(0.3, 1.0));
         // Delinquency risk follows the actual score/grade, not an unrelated bucket.
         // Approved applications are always grade A/B/C (status requires score >= 600),
         // so risk still increases monotonically as grade worsens, with a small
         // non-zero chance even for A/B (real prime borrowers occasionally default too).
         const delinquencyChance = grade === 'A' ? 0.02 : grade === 'B' ? 0.05 : 0.20;
         const risky = chance(delinquencyChance);
-        const loanStatus = risky ? 'delinquent' : chance(0.1) ? 'closed' : 'current';
-        insLoanAcct.run(applicationId, requestedAmount, disbDate, outstanding, loanStatus);
+        // Status and outstanding balance are worked out from the repayment history (section 11),
+        // so they always agree with the dates. Inserted with placeholders here, updated there.
+        insLoanAcct.run(applicationId, requestedAmount, disbDate, requestedAmount, 'current');
         const loanAccountId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
-        pgInsert('loan_account', ['application_id', 'principal_amount', 'disbursement_date', 'outstanding_balance', 'status'],
-            [applicationId, requestedAmount, disbDate, outstanding, loanStatus]);
-        loanAccounts.push({ id: loanAccountId, disbDate, principal: requestedAmount, status: loanStatus, risky, grade, productId: product.product_id, productName: product.product_name });
+        loanAccounts.push({ id: loanAccountId, applicationId, disbDate, principal: requestedAmount, risky, grade,
+            tenor: product.tenor_months, productId: product.product_id, productName: product.product_name });
     }
 });
 
@@ -391,32 +423,51 @@ offerRecipients.forEach(r => {
 // 11. Payment History (monthly installments; risky/delinquent accounts -> late/missed)
 // ---------------------------------------------------------------------------
 const insPay = db.prepare(`INSERT INTO payment_history (loan_account_id, due_date, amount_due, amount_paid, status) VALUES (?,?,?,?,?)`);
+// Only installments already due by TODAY get a payment record. The loan's status and
+// outstanding balance then follow from that record.
+const updLoan = db.prepare(`UPDATE loan_account SET outstanding_balance = ?, status = ? WHERE loan_account_id = ?`);
 loanAccounts.forEach(la => {
-    const installment = round2(la.principal / 12);
-    for (let m = 1; m <= 6; m++) {
+    const installment = round2(la.principal / la.tenor);
+    let paidTotal = 0, nDue = 0;
+    const pgPayments = []; // emitted after the loan_account row so the Postgres FK is satisfied
+    la.firstMissed = null;
+    for (let m = 1; m <= la.tenor; m++) {
         const dueDate = addDays(la.disbDate, m * 30);
+        if (dueDate > TODAY_STR) break; // not due yet
         let paid = installment, status = 'on_time';
         if (la.risky) {
             const roll = faker.number.float({ min: 0, max: 1, fractionDigits: 4 });
-            if (roll < 0.3) { paid = 0; status = 'missed'; }
+            if (roll < 0.3) { paid = 0; status = 'missed'; if (!la.firstMissed) la.firstMissed = dueDate; }
             else if (roll < 0.5) { paid = round2(installment * 0.6); status = 'late'; }
         }
+        paidTotal += paid;
+        nDue = m;
         insPay.run(la.id, dueDate, installment, paid, status);
-        pgInsert('payment_history', ['loan_account_id', 'due_date', 'amount_due', 'amount_paid', 'status'],
-            [la.id, dueDate, installment, paid, status]);
+        pgPayments.push([la.id, dueDate, installment, paid, status]);
     }
+    la.outstanding = Math.max(0, round2(la.principal - paidTotal));
+    la.dpd = la.firstMissed ? daysAgo(la.firstMissed) : 0; // days past due of the oldest missed installment
+    la.status = la.dpd >= 180 ? 'written_off'
+              : la.dpd >= 30 ? 'delinquent'
+              : (nDue === la.tenor && la.outstanding === 0) ? 'closed' : 'current';
+    updLoan.run(la.outstanding, la.status, la.id);
+    pgInsert('loan_account', ['application_id', 'principal_amount', 'disbursement_date', 'outstanding_balance', 'status'],
+        [la.applicationId, la.principal, la.disbDate, la.outstanding, la.status]);
+    pgPayments.forEach(v => pgInsert('payment_history', ['loan_account_id', 'due_date', 'amount_due', 'amount_paid', 'status'], v));
 });
 
 // ---------------------------------------------------------------------------
 // 12. Delinquency Event
 // ---------------------------------------------------------------------------
 const insDelinq = db.prepare(`INSERT INTO delinquency_event (loan_account_id, event_date, days_past_due, event_type) VALUES (?,?,?,?)`);
-loanAccounts.filter(la => la.status === 'delinquent').forEach(la => {
-    const dpd = rint(30, 100);
-    const eventType = dpd >= 90 ? '90dpd' : dpd >= 60 ? '60dpd' : '30dpd';
-    const eventDate = addDays(la.disbDate, 120);
-    insDelinq.run(la.id, eventDate, dpd, eventType);
-    pgInsert('delinquency_event', ['loan_account_id', 'event_date', 'days_past_due', 'event_type'], [la.id, eventDate, dpd, eventType]);
+// One event per threshold the oldest missed installment has actually reached, dated the day it was reached.
+loanAccounts.filter(la => la.firstMissed).forEach(la => {
+    [[30, '30dpd'], [60, '60dpd'], [90, '90dpd'], [180, 'write_off']].forEach(([days, eventType]) => {
+        if (la.dpd < days) return;
+        const eventDate = addDays(la.firstMissed, days);
+        insDelinq.run(la.id, eventDate, days, eventType);
+        pgInsert('delinquency_event', ['loan_account_id', 'event_date', 'days_past_due', 'event_type'], [la.id, eventDate, days, eventType]);
+    });
 });
 
 // ---------------------------------------------------------------------------

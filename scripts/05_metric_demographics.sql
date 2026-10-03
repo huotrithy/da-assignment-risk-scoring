@@ -12,7 +12,7 @@ WITH age_calc AS (
     FROM customer
 ),
 age_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY ABS(age - 42) ASC) AS q  -- q1 = closest to 42 (best)
+    SELECT customer_id, NTILE(4) OVER (ORDER BY ABS(age - 42) ASC, customer_id) AS q  -- q1 = closest to 42 (best)
     FROM age_calc
 ),
 latest_application AS (
@@ -30,7 +30,7 @@ app_range AS (
     JOIN loan_product lp ON lp.product_id = la.product_id
 ),
 range_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY pct_of_range ASC) AS q  -- q1 = lowest pct of range (best)
+    SELECT customer_id, NTILE(4) OVER (ORDER BY pct_of_range ASC, customer_id) AS q  -- q1 = lowest pct of range (best)
     FROM app_range WHERE pct_of_range IS NOT NULL
 )
 SELECT

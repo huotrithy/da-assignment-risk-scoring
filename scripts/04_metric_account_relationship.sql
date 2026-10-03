@@ -15,7 +15,7 @@ WITH acct_agg AS (
     GROUP BY customer_id
 ),
 tenure_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY earliest_open_date DESC) AS q  -- q1 = most recent open date = shortest tenure (worst)
+    SELECT customer_id, NTILE(4) OVER (ORDER BY earliest_open_date DESC, customer_id) AS q  -- q1 = most recent open date = shortest tenure (worst)
     FROM acct_agg
 )
 SELECT

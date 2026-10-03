@@ -32,12 +32,12 @@ tx_median AS (
 ),
 tx_dev_quartile AS (
     SELECT tc.customer_id,
-           NTILE(4) OVER (ORDER BY ABS(tc.avg_monthly_tx_count - m.median_tx) ASC) AS q  -- q1 = closest to median (best)
+           NTILE(4) OVER (ORDER BY ABS(tc.avg_monthly_tx_count - m.median_tx) ASC, customer_id) AS q  -- q1 = closest to median (best)
     FROM tx_calc tc CROSS JOIN tx_median m
     WHERE tc.avg_monthly_tx_count IS NOT NULL
 ),
 spend_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY spend_to_income_ratio ASC) AS q  -- q1 = lowest ratio (best)
+    SELECT customer_id, NTILE(4) OVER (ORDER BY spend_to_income_ratio ASC, customer_id) AS q  -- q1 = lowest ratio (best)
     FROM tx_calc WHERE spend_to_income_ratio IS NOT NULL
 ),
 balance_trend AS (
@@ -49,7 +49,7 @@ balance_trend AS (
     GROUP BY a.customer_id
 ),
 slope_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY slope ASC) AS q  -- q1 = most negative slope (worst)
+    SELECT customer_id, NTILE(4) OVER (ORDER BY slope ASC, customer_id) AS q  -- q1 = most negative slope (worst)
     FROM balance_trend WHERE slope IS NOT NULL
 )
 SELECT

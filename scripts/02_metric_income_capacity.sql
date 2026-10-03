@@ -26,7 +26,7 @@ total_income AS (
 income_quartile AS (
     SELECT
         customer_id, total_monthly_income, income_type_count,
-        NTILE(4) OVER (ORDER BY total_monthly_income) AS q  -- q1 = lowest income (worst)
+        NTILE(4) OVER (ORDER BY total_monthly_income, customer_id) AS q  -- q1 = lowest income (worst)
     FROM total_income
 ),
 latest_application AS (
@@ -43,7 +43,7 @@ dti AS (
     LEFT JOIN latest_application la ON la.customer_id = it.customer_id
 ),
 dti_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY ratio ASC) AS q  -- q1 = lowest ratio (best)
+    SELECT customer_id, NTILE(4) OVER (ORDER BY ratio ASC, customer_id) AS q  -- q1 = lowest ratio (best)
     FROM dti
     WHERE ratio IS NOT NULL
 )

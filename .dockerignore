@@ -1,0 +1,9 @@
+.git
+.env
+node_modules
+material
+docs
+bootstrap
+credit_risk.db
+postgres_export.sql
+*.drawio

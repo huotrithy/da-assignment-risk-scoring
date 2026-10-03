@@ -1,0 +1,10 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: credit-risk-dashboard
+    ports:
+      - "8502:8502"
+    env_file: .env          # provides DATABASE_URL
+    restart: unless-stopped

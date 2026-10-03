@@ -82,7 +82,7 @@ total_income AS (
 ),
 income_quartile AS (
     SELECT customer_id, total_monthly_income, income_type_count,
-           NTILE(4) OVER (ORDER BY total_monthly_income) AS q
+           NTILE(4) OVER (ORDER BY total_monthly_income, customer_id) AS q
     FROM total_income
 ),
 latest_application AS (
@@ -97,7 +97,7 @@ dti AS (
     LEFT JOIN latest_application la ON la.customer_id = it.customer_id
 ),
 dti_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY ratio ASC) AS q
+    SELECT customer_id, NTILE(4) OVER (ORDER BY ratio ASC, customer_id) AS q
     FROM dti WHERE ratio IS NOT NULL
 ),
 income_capacity AS (
@@ -139,12 +139,12 @@ tx_median AS (
 ),
 tx_dev_quartile AS (
     SELECT tc.customer_id,
-           NTILE(4) OVER (ORDER BY ABS(tc.avg_monthly_tx_count - m.median_tx) ASC) AS q
+           NTILE(4) OVER (ORDER BY ABS(tc.avg_monthly_tx_count - m.median_tx) ASC, customer_id) AS q
     FROM tx_calc tc CROSS JOIN tx_median m
     WHERE tc.avg_monthly_tx_count IS NOT NULL
 ),
 spend_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY spend_to_income_ratio ASC) AS q
+    SELECT customer_id, NTILE(4) OVER (ORDER BY spend_to_income_ratio ASC, customer_id) AS q
     FROM tx_calc WHERE spend_to_income_ratio IS NOT NULL
 ),
 balance_trend AS (
@@ -155,7 +155,7 @@ balance_trend AS (
     GROUP BY a.customer_id
 ),
 slope_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY slope ASC) AS q
+    SELECT customer_id, NTILE(4) OVER (ORDER BY slope ASC, customer_id) AS q
     FROM balance_trend WHERE slope IS NOT NULL
 ),
 transaction_behavior AS (
@@ -181,7 +181,7 @@ acct_agg AS (
     FROM account GROUP BY customer_id
 ),
 tenure_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY earliest_open_date DESC) AS q
+    SELECT customer_id, NTILE(4) OVER (ORDER BY earliest_open_date DESC, customer_id) AS q
     FROM acct_agg
 ),
 account_relationship AS (
@@ -203,7 +203,7 @@ age_calc AS (
     FROM customer
 ),
 age_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY ABS(age - 42) ASC) AS q
+    SELECT customer_id, NTILE(4) OVER (ORDER BY ABS(age - 42) ASC, customer_id) AS q
     FROM age_calc
 ),
 app_range AS (
@@ -215,7 +215,7 @@ app_range AS (
     JOIN loan_product lp ON lp.product_id = la.product_id
 ),
 range_quartile AS (
-    SELECT customer_id, NTILE(4) OVER (ORDER BY pct_of_range ASC) AS q
+    SELECT customer_id, NTILE(4) OVER (ORDER BY pct_of_range ASC, customer_id) AS q
     FROM app_range WHERE pct_of_range IS NOT NULL
 ),
 demographics AS (
