@@ -228,3 +228,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Berka dataset (downloaded by download_berka.py)
+data/
+berkadb.dev

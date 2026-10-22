@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Berka Risk Scorecard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="progress"><span id="bar"></span></div>
+
+<main class="deck" id="deck">
+
+<!-- 1 · Title -->
+<section class="slide title-slide">
+  <div class="center">
+    <p class="kicker reveal" style="--i:0">Retail credit risk · Berka dataset</p>
+    <h1 class="mega"><span class="word" style="--i:1">From</span> <span class="word" style="--i:2">guesswork</span><br><span class="word grad" style="--i:3">to</span> <span class="word grad" style="--i:4">evidence</span></h1>
+    <p class="lead reveal" style="--i:6">How we derived the scorecard's weights and formula from 682 real loans, instead of assuming them.</p>
+    <p class="hint reveal" style="--i:8">Press <kbd>→</kbd> to start · <kbd>E</kbd> explains every slide · <kbd>F</kbd> fullscreen</p>
+  </div>
+  <aside class="why"><h4>Why this deck</h4><p>The first version of our scorecard used weights of 35/25/20/10/10 chosen by judgment. We had no real default outcomes to test them against.</p><p>The Berka dataset is real bank data with real loan outcomes, so for the first time every weight can be <b>measured</b>.</p></aside>
+</section>
+
+<!-- 2 · The question -->
+<section class="slide" data-enter="dots1">
+  <h2 class="reveal" style="--i:0">682 real loans. <span class="red">76</span> went bad.</h2>
+  <div class="split">
+    <div class="dots" id="dots1"></div>
+    <div class="side">
+      <div class="stat reveal" style="--i:2"><b data-count="682">0</b><span>loans analysed</span></div>
+      <div class="stat reveal" style="--i:3"><b class="red" data-count="76">0</b><span>bad: status B or D</span></div>
+      <div class="stat reveal" style="--i:4"><b class="amber" data-count="11.1" data-dec="1" data-suf="%">0</b><span>overall bad rate</span></div>
+      <p class="note reveal" style="--i:5">Bad = <b>B</b> finished unpaid, or <b>D</b> running in arrears. Good = <b>A</b> / <b>C</b>.</p>
+    </div>
+  </div>
+  <aside class="why"><h4>Why this matters</h4><p>A scorecard is only as honest as its target. Here the target is a real outcome the bank recorded, not a label we invented.</p><p>Status C and D loans are still running, so a few "good" C loans may yet default. That is a limit we flag at the end.</p></aside>
+</section>
+
+<!-- 3 · No leakage -->
+<section class="slide" data-enter="timeline">
+  <h2 class="reveal" style="--i:0">Only look at what the bank knew <span class="grad">before</span> the loan</h2>
+  <div class="timeline reveal" style="--i:1">
+    <div class="tl-past"><div class="tl-window" id="tlWindow"><span>12-month feature window</span></div></div>
+    <div class="tl-pin"><i></i><span>Loan date</span></div>
+    <div class="tl-future"><span>🔒 Never used: later transactions, the loan's own repayments</span></div>
+    <div class="tl-ticks"><span>−24 m</span><span>−12 m</span><span>loan</span><span>+12 m</span></div>
+  </div>
+  <ul class="bullets">
+    <li class="reveal" style="--i:3">Every feature is built from transactions dated <b>before</b> <code>loan.date</code>.</li>
+    <li class="reveal" style="--i:4">Using later data would let the score "see" the repayment outcome: a leak that fakes high accuracy.</li>
+    <li class="reveal" style="--i:5">Result: the score works for a <b>new applicant</b>, the real use case.</li>
+  </ul>
+  <aside class="why"><h4>Data leakage</h4><p>The loan's own repayments appear in <code>trans</code> as <code>k_symbol = UVER</code>. They are excluded, because a customer who is repaying obviously looks good.</p><p>This rule is the difference between a score that is real and one that is flattering.</p></aside>
+</section>
+
+<!-- 4 · Criteria -->
+<section class="slide">
+  <h2 class="reveal" style="--i:0">Five criteria, 24 metrics</h2>
+  <div class="cards">
+    <div class="card reveal" style="--i:1;--c:#ff5d6c"><h3>Payment Behavior</h3><p class="sub">proxy: overdraft conduct</p><div class="chips"><i>sanction_count</i><i>neg_balance_share</i><i>months_with_neg_balance</i></div></div>
+    <div class="card reveal" style="--i:2;--c:#5ab0ff"><h3>Income &amp; Capacity</h3><p class="sub">income is a proxy: credits in</p><div class="chips"><i>payment_to_inflow</i><i>amount_to_annual_inflow</i><i>inflow_per_month</i><i>income_source_types</i></div></div>
+    <div class="card reveal" style="--i:3;--c:#22d3a0"><h3>Transaction Behavior</h3><p class="sub">how the account is used</p><div class="chips"><i>min_balance</i><i>avg_balance</i><i>balance_slope</i><i>cash_share</i><i>txn_per_month</i><i>outflow_to_inflow</i></div></div>
+    <div class="card reveal" style="--i:4;--c:#f5c542"><h3>Account Relationship</h3><p class="sub">tie to the bank</p><div class="chips"><i>n_disponents</i><i>has_card</i><i>tenure_months</i><i>monthly_statement</i></div></div>
+    <div class="card reveal" style="--i:5;--c:#b48cff"><h3>Demographics &amp; Loan</h3><p class="sub">light adjustment</p><div class="chips"><i>loan_amount</i><i>loan_duration</i><i>age</i><i>is_female</i><i>district_*</i></div></div>
+  </div>
+  <p class="note reveal" style="--i:7">Same five criteria as the original design, so the documents stay consistent. Only the numbers inside them changed.</p>
+  <aside class="why"><h4>Why a proxy for payment behavior?</h4><p>Berka has one loan per account and no payment history before the loan, so "% on-time payments" cannot exist for a first-time borrower.</p><p>What the bank <em>does</em> see is whether the customer overdrew the account and was charged penalty interest (<code>SANKC. UROK</code>).</p></aside>
+</section>
+
+<!-- Origin of the criteria -->
+<section class="slide">
+  <h2 class="reveal" style="--i:0">Where do the five criteria come from?</h2>
+  <p class="lead reveal" style="--i:1">Not from the data. From the four questions every lender asks, plus one.</p>
+  <div class="maprows">
+    <div class="maprow reveal" style="--i:2;--c:#ff5d6c"><span class="q">Have they repaid before?</span><i class="arr"></i><span class="to">Payment Behavior</span></div>
+    <div class="maprow reveal" style="--i:3;--c:#5ab0ff"><span class="q">Can they afford it?</span><i class="arr"></i><span class="to">Income &amp; Capacity</span></div>
+    <div class="maprow reveal" style="--i:4;--c:#22d3a0"><span class="q">Do they manage money responsibly?</span><i class="arr"></i><span class="to">Transaction Behavior</span></div>
+    <div class="maprow reveal" style="--i:5;--c:#f5c542"><span class="q">How stable is the relationship?</span><i class="arr"></i><span class="to">Account Relationship</span></div>
+    <div class="maprow reveal" style="--i:6;--c:#b48cff"><span class="q">What is the loan itself? <em>(added)</em></span><i class="arr"></i><span class="to">Demographics &amp; Loan Context</span></div>
+  </div>
+  <p class="note reveal" style="--i:8">The grouping is a <b>design convention</b>, not a law of nature. The data can tell us which groups help, which is what the next slides test.</p>
+  <aside class="why"><h4>Honest provenance</h4><p>The four questions are in our project notes (<code>risk_scoring.md</code>). Our methodology calls the structure "FICO-style": group related metrics, weight the groups.</p><p>For comparison, FICO's public factors are payment history 35%, amounts owed 30%, length of history 15%, new credit 10%, credit mix 10%. Our original 35/25/20/10/10 echoes that shape but was an analyst's judgment, not copied and not fitted. The fifth criterion exists mainly to hold loan-size and age context.</p></aside>
+</section>
+
+<!-- 5 · WoE -->
+<section class="slide" data-enter="woe">
+  <h2 class="reveal" style="--i:0">Metric points = how well a bin separates good from bad</h2>
+  <div class="split wide">
+    <div>
+      <p class="chart-title reveal" style="--i:1">Example: <code>min_balance</code> in the 12 months before the loan</p>
+      <div id="woe" class="woe"></div>
+    </div>
+    <div class="side">
+      <div class="formula reveal" style="--i:3">WoE = ln( <span class="g">good share</span> ÷ <span class="r">bad share</span> )</div>
+      <ul class="bullets small">
+        <li class="reveal" style="--i:4"><b class="g">Positive</b> bin: holds more good loans than average → safer.</li>
+        <li class="reveal" style="--i:5"><b class="r">Negative</b> bin: holds more bad loans → riskier.</li>
+        <li class="reveal" style="--i:6">The points are <b>measured</b>, not guessed cutoffs like "≥95% → 100".</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="why"><h4>Reading the chart</h4><p>Loans with a lowest balance of ≤ 500 default 26% of the time. Above 10,000 it is 0.7%. The bars show the log-ratio of those two shares.</p><p>A metric's <b>Information Value (IV)</b> adds up how far all its bins are from neutral: bigger IV = more predictive.</p></aside>
+</section>
+
+<!-- 6 · Noise floor -->
+<section class="slide" data-enter="iv">
+  <h2 class="reveal" style="--i:0">Filter out metrics that only look useful by luck</h2>
+  <div class="split wide">
+    <div id="ivchart" class="ivchart"></div>
+    <div class="side">
+      <p class="note reveal" style="--i:2">With only 76 bad loans, even a <b>worthless</b> metric scores IV ≈ 0.05 by chance.</p>
+      <p class="note reveal" style="--i:3">We shuffle the labels 200 times to measure that chance level, per metric.</p>
+      <div class="legend reveal" style="--i:4"><span><i class="k1"></i>beats chance → kept</span><span><i class="k2"></i>within noise → dropped</span><span><i class="k3"></i>chance + 2 SD line</span></div>
+      <p class="note reveal" style="--i:5">Dropped: age, gender, tenure, loan duration, district salary / unemployment …</p>
+    </div>
+  </div>
+  <aside class="why"><h4>The noise floor</h4><p>Shuffling the good/bad labels destroys any real link, so whatever IV remains is pure chance. A metric must beat <em>chance + 2 standard deviations</em> to be kept.</p><p>Dropping age and gender this way is also the outcome we want for fairness.</p></aside>
+</section>
+
+<!-- 7 · Weights -->
+<section class="slide" data-enter="weights">
+  <h2 class="reveal" style="--i:0">Where each criteria weight comes from</h2>
+  <div class="steps reveal" style="--i:1"><span>1 · IV of each kept metric</span><b>→</b><span>2 · minus chance IV</span><b>→</b><span>3 · average per criteria</span><b>→</b><span>4 · share of total = weight</span></div>
+  <div class="wbars" id="wbars"></div>
+  <div class="toggle reveal" style="--i:3"><button id="wBtn">⇄ Switch: judgment ↔ data</button><span class="muted" id="wLabel">showing: data-derived</span></div>
+  <aside class="why"><h4>What changed</h4><p><b>Payment conduct</b> is #1, as assumed. <b>Income</b> collapsed from 25% to 5%: our income is only a proxy (money credited), so it is noisy.</p><p><b>Account relationship</b> rose, mostly because accounts with a second holder (145 loans) had <b>zero</b> bad loans.</p></aside>
+</section>
+
+<!-- Keep / drop / add test -->
+<section class="slide" data-enter="ctest">
+  <h2 class="reveal" style="--i:0">Can we drop or add a criterion? <span class="grad">Test it.</span></h2>
+  <div class="split wide">
+    <div>
+      <p class="chart-title reveal" style="--i:1">Change in out-of-fold AUC vs the 5-criteria baseline (0.914)</p>
+      <div id="ctest" class="ctest"></div>
+    </div>
+    <div class="side">
+      <p class="note reveal" style="--i:3"><b>A criterion earns its place if:</b></p>
+      <ul class="bullets small">
+        <li class="reveal" style="--i:4">it is known <b>before</b> the decision</li>
+        <li class="reveal" style="--i:5">it beats chance on the noise test</li>
+        <li class="reveal" style="--i:6">removing it makes unseen loans score <b>worse</b></li>
+        <li class="reveal" style="--i:7">or there is a <b>policy</b> reason (e.g. affordability)</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="why"><h4>How to read it</h4><p>Each bar re-runs the whole pipeline (bins, noise filter, weights) with one criterion removed or added, on the same 100 train/test splits. "Better in x% of folds" counts how often the variant beat the baseline on the same split: near 50% means a coin flip.</p><p><b>Drop:</b> Transaction Behavior is essential (worse in 99% of folds). Income and Demographics barely matter statistically.</p><p><b>Add:</b> cash-flow stability helps slightly; standing orders add nothing. Standing orders also have no date, so some may postdate the loan: treat their high IV (1.7) with suspicion, not as a find.</p></aside>
+</section>
+
+<!-- 8 · Formula -->
+<section class="slide" data-enter="gauge">
+  <h2 class="reveal" style="--i:0">Turning the composite into a 300–850 score</h2>
+  <div class="split wide">
+    <div class="gaugebox reveal" style="--i:1">
+      <svg viewBox="0 0 300 175" class="gauge">
+        <defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#ff5d6c"/><stop offset=".4" stop-color="#ff9f43"/><stop offset=".6" stop-color="#f5c542"/><stop offset=".8" stop-color="#7bd88f"/><stop offset="1" stop-color="#22d3a0"/></linearGradient></defs>
+        <path d="M30 150 A120 120 0 0 1 270 150" pathLength="100" class="g-track"/>
+        <path d="M30 150 A120 120 0 0 1 270 150" pathLength="100" class="g-fill" id="gFill"/>
+      </svg>
+      <div class="g-read"><b id="gScore">600</b><span id="gGrade">C</span></div>
+      <input type="range" id="gRange" min="300" max="850" value="600" aria-label="score">
+      <div class="g-meta"><div><small>odds good : bad</small><b id="gOdds">20 : 1</b></div><div><small>chance of default</small><b id="gPd">4.8%</b></div></div>
+    </div>
+    <div class="side">
+      <div class="formula reveal" style="--i:2">score = offset + <span class="g">50 ÷ ln 2</span> × ln( odds )</div>
+      <ul class="bullets small">
+        <li class="reveal" style="--i:3"><b>600 pts = 20 : 1</b> odds (anchor).</li>
+        <li class="reveal" style="--i:4"><b>+50 pts doubles the odds</b> (PDO = 50).</li>
+        <li class="reveal" style="--i:5">So every score <em>means</em> a default probability. Drag the slider.</li>
+        <li class="reveal" style="--i:6">Grade bands kept: A ≥750 · B ≥680 · C ≥600 · D ≥500 · E.</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="why"><h4>Why not "300 + composite × 5.5"?</h4><p>That old rule only stretched a 0–100 number to fit the range. It said nothing about risk.</p><p>The standard scorecard form ties points to odds, so "680" always means about 1.6% default. Calibration uses <em>out-of-fold</em> predictions so it is not overfit.</p></aside>
+</section>
+
+<!-- Why 300-850 -->
+<section class="slide" data-enter="scale">
+  <h2 class="reveal" style="--i:0">Why 300–850? It is a <span class="grad">label</span>, not a law</h2>
+  <div class="split wide">
+    <div class="rails reveal" style="--i:1">
+      <div class="rail"><div class="rl"><b>Points, 300–850</b><small>our scale (FICO convention)</small></div><div class="rt"><i class="rm" id="m1"></i></div><div class="rv" id="v1">600</div></div>
+      <div class="rail"><div class="rl"><b>Points, 0–1000</b><small>same line, relabelled</small></div><div class="rt"><i class="rm" id="m2"></i></div><div class="rv" id="v2">545</div></div>
+      <div class="rail"><div class="rl"><b>Default probability</b><small>% of borrowers who go bad</small></div><div class="rt pdrail"><i class="rm" id="m3"></i></div><div class="rv" id="v3">4.8%</div></div>
+      <input type="range" id="sRange" min="300" max="850" value="600" aria-label="score">
+      <p class="note" id="sNote">Drag: the two point scales move in lockstep. The % scale hugs the left edge for every good score.</p>
+    </div>
+    <div class="side">
+      <ul class="bullets small">
+        <li class="reveal" style="--i:2">Score = offset + factor × ln(odds). A different range just changes two numbers. <b>Ranking and AUC are identical.</b></li>
+        <li class="reveal" style="--i:3"><b>Why 300–850:</b> credit people read it instantly, and our schema, grade bands and docs already use it.</li>
+        <li class="reveal" style="--i:4"><b>Why not %:</b> a probability squashes the safe end (0.2% vs 0.6% look equal but are 3× the risk) and cannot be added metric by metric.</li>
+        <li class="reveal" style="--i:5"><b>Real cost:</b> the range clips. 57 loans (8%) sit exactly on 300 or 850.</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="why"><h4>Three free choices</h4><p>Any scorecard fixes (1) an anchor, here 600 points at 20:1 odds, (2) points to double the odds, here 50, and (3) a floor and ceiling. Nothing in the data forces 300 or 850.</p><p>0–1000 would be equally valid; we would simply re-cut the A–E bands. We keep 300–850 for continuity, and use the probability for what it is best at: <b>pricing and provisioning</b>. Score ranks, probability prices.</p><p>The 0–1000 rail here is a plain stretch of 300–850, to show the idea.</p></aside>
+</section>
+
+<!-- 9 · Validation -->
+<section class="slide" data-enter="auc">
+  <h2 class="reveal" style="--i:0">Does it work? Tested on loans it never saw</h2>
+  <div class="aucs" id="aucs"></div>
+  <p class="note reveal" style="--i:7">5-fold × 20 repeats. Bins, noise filter and weights are re-fitted on the training folds only. AUC: 0.5 = coin flip, 1.0 = perfect.</p>
+  <aside class="why"><h4>Be honest about the gap</h4><p>Data-derived weights beat the judgment weights by about 0.02 AUC, which is <b>less than one standard deviation</b> across folds.</p><p>So the claim is "at least as good, and now justified", not "much better". The big win is the metrics and points, which is why even equal weights score 0.90.</p></aside>
+</section>
+
+<!-- 10 · Grades -->
+<section class="slide" data-enter="grades">
+  <h2 class="reveal" style="--i:0">Bad rate climbs steeply from A to E</h2>
+  <div class="gradechart" id="gradechart"></div>
+  <p class="note reveal" style="--i:8">Out-of-fold: each loan is graded by a model that never saw it. A and B: 0 bad loans out of 194.</p>
+  <aside class="why"><h4>Reading it</h4><p>Bar height is the share of loans that went bad. The count under each bar is bad / total.</p><p>Grade E holds 112 loans, of which 55 went bad: it captures 72% of all defaults in 16% of the book.</p></aside>
+</section>
+
+<!-- 11 · Knockout -->
+<section class="slide" data-enter="dots2">
+  <h2 class="reveal" style="--i:0">One finding behaves like a <span class="red">rule</span>, not a weight</h2>
+  <div class="split">
+    <div class="dots" id="dots2"></div>
+    <div class="side">
+      <div class="stat reveal" style="--i:2"><b class="red" data-count="26">0</b><span>loans overdrawn before disbursement</span></div>
+      <div class="stat reveal" style="--i:3"><b class="red" data-count="26">0</b><span>of them went bad (100%)</span></div>
+      <div class="stat reveal" style="--i:4"><b class="green" data-count="0">0</b><span>of them were good</span></div>
+      <p class="note reveal" style="--i:5">Only 3.8% of loans, yet it drives <b>51%</b> of the Payment Behavior weight.</p>
+      <p class="note reveal" style="--i:6"><b>Recommendation:</b> auto-refer these, and cap that weight at ~35% in the continuous score.</p>
+    </div>
+  </div>
+  <div class="legend reveal" style="--i:7"><span><i class="dot-r"></i>overdrawn → bad</span><span><i class="dot-a"></i>other bad loans</span><span><i class="dot-g"></i>good</span></div>
+  <aside class="why"><h4>Not leakage</h4><p>The overdraft happened <em>before</em> the loan date, so the bank could see it at decision time.</p><p>But when a signal is 26 out of 26, it is better handled as a policy rule than blended into a smooth score where it dominates the weights.</p></aside>
+</section>
+
+<!-- 12 · Caveats -->
+<section class="slide" data-enter="outro">
+  <h2 class="reveal" style="--i:0">What to remember</h2>
+  <div class="two">
+    <div>
+      <h3 class="reveal good-h" style="--i:1">✓ What we can claim</h3>
+      <ul class="bullets small">
+        <li class="reveal" style="--i:2">Weights and points are <b>measured</b> on real outcomes, with no leakage.</li>
+        <li class="reveal" style="--i:3">Out-of-fold AUC <b>0.91</b>; grades rank risk A → E.</li>
+        <li class="reveal" style="--i:4">Result holds when censored 1998 loans are removed (AUC 0.90).</li>
+        <li class="reveal" style="--i:5">Age, gender and district earn no weight.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="reveal warn-h" style="--i:1">⚠ What to caveat</h3>
+      <ul class="bullets small">
+        <li class="reveal" style="--i:2">Only 76 bad loans: weights are noisy, ±several points.</li>
+        <li class="reveal" style="--i:3">Income is a proxy; Payment Behavior is a proxy.</li>
+        <li class="reveal" style="--i:4">Weight gain over judgment is small (0.02 AUC).</li>
+        <li class="reveal" style="--i:5">Status C/D loans are still running; labels are not final.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="end reveal" style="--i:7">Evidence replaced assumption. <span class="grad">That is the whole point.</span></p>
+  <aside class="why"><h4>Next steps</h4><p>Port the WoE bins into the SQL scripts, so the live scoring matches this model, and add the overdraft knockout rule to the approval policy.</p><p>Full method: <code>docs/Berka_Scorecard.md</code>.</p></aside>
+</section>
+
+</main>
+
+<nav class="nav">
+  <button id="prev" aria-label="Previous">←</button>
+  <div class="dotsnav" id="dotsnav"></div>
+  <button id="next" aria-label="Next">→</button>
+  <button id="whyBtn" class="whybtn" aria-label="Explain">E · Explain</button>
+</nav>
+<div class="counter" id="counter"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
