@@ -5,7 +5,7 @@
 -- features are exactly what the bank could have seen when it decided.
 -- Split: earliest 70% of loans (by loan_date, loan_id) = train, rest = test.
 -- ============================================================================
-DROP TABLE IF EXISTS berka.loan_features;
+DROP TABLE IF EXISTS berka.loan_features CASCADE;   -- validation views are rebuilt by 30_validate.sql
 
 CREATE TABLE berka.loan_features AS
 WITH owner AS (                                   -- the account owner (one per account)

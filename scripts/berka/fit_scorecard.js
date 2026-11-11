@@ -158,7 +158,7 @@ async function main() {
     for (const c of CRITERIA)
       await db.query('INSERT INTO berka.criterion_weight VALUES ($1,$2)', [c, metrics.reduce((s, m, j) => s + (m.criterion === c ? best.weights[j] : 0), 0).toFixed(4)]);
     const params = { shrink_k: best.k, approve_cutoff: cut.approve, grade_A: cut.A, grade_B: cut.B, grade_C: cut.C, grade_D: cut.D,
-      l2: L2, portfolio_bad_rate: pbr, n_train: train.length, n_train_bad: y.reduce((s, v) => s + v, 0) };
+      l2: L2, train_gini: best.gini, portfolio_bad_rate: pbr, n_train: train.length, n_train_bad: y.reduce((s, v) => s + v, 0) };
     for (const [n, v] of Object.entries(params)) await db.query('INSERT INTO berka.scorecard_param VALUES ($1,$2)', [n, Math.round(v * 10000) / 10000]);
     await db.query('COMMIT');
 
