@@ -26,8 +26,9 @@ still sensitive and are handled as follows.
 | No partner bank/account | 782,812 rows (cash, fees, interest) | NULL; income sources counted only from incoming transfers |
 | `?` in district statistics (unemployment '95, crimes '95) | 1 district | NULL; unemployment falls back to 1996 |
 | Statement frequency differs (monthly / weekly / after each transaction) | 333 accounts not monthly | metrics use month-end balances from transactions, not statements |
-| Short history before some loans | 3.4–22.9 months (median 13) | metrics are per month; window metrics shrunk toward the average (see Scoring_Methodology §6) |
+| Short history before some loans | 3.4–22.9 months (median 13) | money metrics averaged over the months actually elapsed; window metrics shrunk toward the average (see Scoring_Methodology §6) |
 | Cards issued after the loan date | most cards | only cards issued **before** the loan count (36 loans), so no future information leaks into the score |
+| No date for when a second user (DISPONENT) joined an account | 869 dispositions | joint-account status treated as known at loan date; stated as a limitation (it may postdate the loan) |
 | Running loans may still go bad (status C) | 403 loans | extra checks on finished loans and on loans at least a year old |
 | Few bad loans | 76 (12 in the test set) | caveat stated with every test result |
 

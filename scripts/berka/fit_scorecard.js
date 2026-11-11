@@ -31,7 +31,6 @@ const L2 = 1.0;
 
 const num = (v) => (v === null || v === undefined ? null : Number(v));
 const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
-const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / (a.length - 1)); };
 const r3 = (v) => (v === null || !Number.isFinite(v) ? null : Math.round(v * 1000) / 1000);
 
 // Bad rate per quartile group, lowest -> highest value. Tied values stay in the same group, so a
@@ -73,8 +72,7 @@ function fitWith(train, y, metrics, k) {
   const P = scoreRows(train, metrics, k);                    // [metric][row]
   const X = train.map((_, i) => metrics.map((_, j) => P[j][i] / 100));
   const model = sc.fitLogistic(X, y, { l2: L2 });
-  const sds = metrics.map((_, j) => sd(P[j].map((v) => v / 100)));
-  const weights = sc.weightsFromCoef(model.coef, sds);
+  const weights = sc.weightsFromCoef(model.coef);
   const scores = train.map((_, i) => metrics.reduce((s, _, j) => s + weights[j] * P[j][i], 0));
   return { model, weights, scores, gini: -sc.gini(scores, y) };   // higher score = safer, so flip sign
 }
@@ -136,7 +134,11 @@ async function main() {
       e.reason = 'regression coefficient points the wrong way once the other metrics are included: no added information';
       metrics = metrics.filter((_, j) => j !== bad);
     }
-    for (const m of metrics) { m.verdict = 'kept'; m.reason = `|Gini| ${Math.abs(m.gini).toFixed(2)}, bad rate falls steadily across its bands`; }
+    for (const m of metrics) {
+      const r = m.bands.map((b) => `${(100 * b.bad_rate).toFixed(0)}%`);
+      m.verdict = 'kept';
+      m.reason = `|Gini| ${Math.abs(m.gini).toFixed(2)}; bad rate ${r.join(' → ')} across its ${r.length} bands (lowest value first)`;
+    }
 
     // 6. Grade cut-offs on train scores
     const pbr = mean(y);
@@ -154,13 +156,15 @@ async function main() {
       for (const b of m.bands)
         await db.query('INSERT INTO berka.scorecard_band VALUES ($1,$2,$3,$4,$5,$6,$7)', [m.metric, b.band, b.lower, b.upper, b.points, r3(b.bad_rate), b.n_train]);
       await db.query('INSERT INTO berka.scorecard_weight VALUES ($1,$2,$3,$4,$5,$6)',
-        [m.metric, m.criterion, best.model.coef[j].toFixed(4), best.weights[j].toFixed(4), m.nullBand, m.window]);
+        [m.metric, m.criterion, String(best.model.coef[j]), String(best.weights[j]), m.nullBand, m.window]);
     }
     for (const c of CRITERIA)
-      await db.query('INSERT INTO berka.criterion_weight VALUES ($1,$2)', [c, metrics.reduce((s, m, j) => s + (m.criterion === c ? best.weights[j] : 0), 0).toFixed(4)]);
+      await db.query('INSERT INTO berka.criterion_weight VALUES ($1,$2)', [c, String(metrics.reduce((s, m, j) => s + (m.criterion === c ? best.weights[j] : 0), 0))]);
     const params = { shrink_k: best.k, approve_cutoff: cut.approve, grade_A: cut.A, grade_B: cut.B, grade_C: cut.C, grade_D: cut.D,
       l2: L2, train_gini: best.gini, portfolio_bad_rate: pbr, n_train: train.length, n_train_bad: y.reduce((s, v) => s + v, 0) };
-    for (const [n, v] of Object.entries(params)) await db.query('INSERT INTO berka.scorecard_param VALUES ($1,$2)', [n, Math.round(v * 10000) / 10000]);
+    // grades the fit assigns on train; score_check.sql verifies SQL reproduces them exactly
+    for (const g of ['A', 'B', 'C', 'D', 'E']) params[`n_train_grade_${g}`] = best.scores.filter((v) => sc.grade(v, cut) === g).length;
+    for (const [n, v] of Object.entries(params)) await db.query('INSERT INTO berka.scorecard_param VALUES ($1,$2)', [n, String(v)]);
     await db.query('COMMIT');
 
     // 8. Summary

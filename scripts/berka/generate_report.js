@@ -69,6 +69,12 @@ function build(d) {
   const kept = d.evidence.filter((e) => e.verdict === 'kept');
   const dropped = d.evidence.filter((e) => e.verdict !== 'kept');
   const ev = Object.fromEntries(d.evidence.map((e) => [e.metric, e]));
+  const weak = d.evidence.filter((e) => e.verdict === 'dropped_weak').map((e) => METRIC[e.metric]);
+  const dups = d.evidence.filter((e) => e.verdict === 'dropped_duplicate').map((e) => METRIC[e.metric]);
+  const listOf = (a) => { const l = a.map((x, i) => (i === 0 ? x : x.charAt(0).toLowerCase() + x.slice(1))); return l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}` : l.join(''); };
+  const jointW = d.weights.find((w) => w.metric === 'joint_account');
+  const jointRank = d.weights.findIndex((w) => w.metric === 'joint_account') + 1;
+  const rankWord = ['', 'largest', 'second-largest', 'third-largest', 'fourth-largest'][jointRank] || `${jointRank}th-largest`;
   const nBad = d.status.filter((s) => s.status === 'B' || s.status === 'D').reduce((a, s) => a + Number(s.n), 0);
   const gradeRow = (split) => d.byGrade.filter((g) => g.split === split).map((g) => pct(g.bad_rate)).join(' / ');
   const hist = Object.fromEntries(d.history.map((h) => [h.history_bucket, h]));
@@ -91,11 +97,11 @@ function build(d) {
   add(H('1. Executive summary'));
   add(P(`This stage rebuilds the credit risk scorecard on real bank data. The Berka / PKDD'99 dataset holds ${int(d.counts.accounts)} accounts, ${int(d.counts.trans)} transactions and ${int(d.counts.loans)} loans from one Czech bank (1993–1998), with the real outcome of every loan: ${nBad} loans (${pct(nBad / d.counts.loans)}) were not repaid.`));
   add(P('Because the outcome is known, every part of the scorecard is now decided by data rather than judgement:'));
-  add(bullet(B('Metrics: '), `${d.evidence.length} candidate metrics were tested; ${kept.length} were kept. Age, region, spending ratio and card ownership were dropped because they did not separate good from bad loans; three more were dropped because they duplicated a stronger metric.`));
+  add(bullet(B('Metrics: '), `${d.evidence.length} candidate metrics were tested; ${kept.length} were kept. ${listOf(weak)} were dropped because they did not separate good from bad loans; ${listOf(dups)} were dropped because they duplicated a stronger metric.`));
   add(bullet(B('Weights: '), 'learned by logistic regression, for each metric and therefore for each criterion.'));
   add(bullet(B('Points: '), "set from each band's real bad-loan rate."));
   add(bullet(B('Score: '), '0 to 100. The Stage 2 scaling to 300–850 is removed.'));
-  add(bullet(B('Cut-offs: '), `a loan is approved only in score ranges where the real bad rate is below the average. ${pct(d.overall.appr, 0)} of loans would be approved; ${pct(d.overall.bad_appr)} of approved loans went bad, against ${pct(d.overall.bad_rej)} of rejected loans.`));
+  add(bullet(B('Cut-offs: '), `a loan is approved only in score ranges where the real bad rate is below the average. On the test loans, ${pct(S.test.approval_rate, 0)} would be approved; ${pct(S.test.bad_rate_approved)} of approved loans went bad, against ${pct(S.test.bad_rate_rejected)} of rejected loans (all loans: ${pct(d.overall.appr, 0)} approved, ${pct(d.overall.bad_appr)} vs ${pct(d.overall.bad_rej)}).`));
   add(P(`The scorecard was learned on the earliest ${int(S.train.n)} loans and checked on the latest ${int(S.test.n)}, which it never saw. It separates good from bad loans with a Gini of ${f2(S.train.gini)} on the training loans and ${f2(S.test.gini)} on the test loans, and the bad rate rises steadily from grade A to grade E. The test set contains only ${S.test.n_bad} bad loans, so the test figures show a direction rather than a precise rate.`));
 
   // 2
@@ -180,7 +186,7 @@ function build(d) {
   add(H2('5.4 Bands and points'));
   add(P('Each kept metric is cut into bands at the quartiles of its training values (two bands for yes/no metrics). Neighbouring bands are merged until the bad rate rises or falls steadily. The points of a band come from its weight of evidence — the log of the share of good loans divided by the share of bad loans in that band — scaled so that the safest band earns 100 and the riskiest earns 0. A missing value is placed in the riskier band. The band limits are fixed numbers, so a customer\'s points do not depend on who else is scored.'));
   add(H2('5.5 Weights'));
-  add(P(`A logistic regression predicts whether a loan went bad from the points of the kept metrics, with a small penalty (L2 = ${P_.l2}) that keeps the weights stable when a metric separates the groups very sharply. Each metric's weight is the size of its coefficient multiplied by how much its points vary, scaled so all weights add up to 100%. A criterion's weight is the sum of its metrics' weights, so both levels come from the same calculation.`));
+  add(P(`A logistic regression predicts whether a loan went bad from the points of the kept metrics, with a small penalty (L2 = ${P_.l2}) that keeps the weights stable when a metric separates the groups very sharply. Each metric's weight is the size of its coefficient, scaled so all weights add up to 100%. Because every metric's points use the same 0–100 scale, the weighted score ranks loans exactly as the regression does. A criterion's weight is the sum of its metrics' weights, so both levels come from the same calculation.`));
   add(H2('5.6 Short history'));
   add(P('Metrics measured over the 12-month window — overdraft events, balance volatility and debt-to-income — are less reliable when few months were observed. Their points are pulled toward the training average in proportion to how little history there is:'));
   add(code('points = average + (points − average) × months ÷ (months + k)'));
@@ -207,6 +213,7 @@ function build(d) {
   add(figure('metric_quartiles.png', 'Figure 2. Real bad rate across each metric\'s value groups (training loans). Yes/no metrics show two groups.'));
   add(H2('6.1 Why each dropped metric was dropped'));
   for (const e of dropped) add(bullet(B(`${METRIC[e.metric]}: `), e.reason.replace(/negative_balance_events|balance_volatility|balance_trend|[a-z_]+_[a-z_]+/g, (m) => METRIC[m] || m)));
+  add(P(`Account age, the metric closest to the short-history question, was dropped on the edge of the rule: its rank correlation with balance trend is ${pairText('history_months', 'balance_trend')}, right at the 0.5 limit.`));
   add(P(`A large difference between groups is not enough on its own. Only ${d.card.n} of the ${d.card.n_all} training borrowers had a card before their loan, and ${d.card.bad} of them went bad. The group is too small to separate good from bad loans across the whole portfolio, so card ownership scores low overall even though card holders look safe.`));
   add(figure('correlation.png', 'Figure 3. Rank correlation between candidate metrics (training loans). Values shown where |r| ≥ 0.5.', 560));
 
@@ -215,7 +222,7 @@ function build(d) {
   add(H2('7.1 Why these metrics, and what supports them?'));
   add(P(`In Stage 2 the metrics came from judgement. In Stage 3 each one is tested against real loan outcomes (section 6). ${kept.length} of ${d.evidence.length} candidates passed. The strongest is balance volatility: loans in the most volatile quarter went bad ${pct(ev.balance_volatility.bad_rate_q4, 0)} of the time, against ${pct(ev.balance_volatility.bad_rate_q1, 0)} in the most stable quarter. Every borrower with an overdraft in the year before the loan went bad (${pct(ev.negative_balance_events.bad_rate_q2, 0)}), against ${pct(ev.negative_balance_events.bad_rate_q1, 0)} of the rest. Several Stage 2 assumptions did not hold: age (Gini ${f2(ev.age_at_loan.gini_train)}), region and the spending ratio carry almost no signal, and were dropped.`));
   add(H2('7.2 Why these weights?'));
-  add(P('The Stage 2 weights (35 / 25 / 20 / 10 / 10) were set by judgement. The Stage 3 weights come from a logistic regression on the training loans: a metric that moves the prediction more, and varies more between customers, gets a larger share of the score.'));
+  add(P('The Stage 2 weights (35 / 25 / 20 / 10 / 10) were set by judgement. The Stage 3 weights come from a logistic regression on the training loans: a metric that moves the prediction of a bad loan more gets a larger share of the score. The order of the criteria is close to the Stage 2 judgement — payment behaviour first — but each number is now measured rather than chosen.'));
   add(table(['Metric', 'Criterion', 'Weight'], d.weights.map((w) => [METRIC[w.metric], CRIT[w.criterion], pct(w.weight)])));
   add(gap());
   add(table(['Criterion', 'Weight'], d.critw.map((c) => [CRIT[c.criterion], pct(c.weight)])));
@@ -224,12 +231,12 @@ function build(d) {
   add(H2('7.3 Why multiply by 5.5 and add 300?'));
   add(P('That step only moved the score onto the familiar 300–850 range of commercial credit scores; it added no information and raised questions about the constants. Stage 3 removes it. The score is the weighted sum of points, from 0 to 100, and the grade cut-offs are set directly on that scale.'));
   add(H2('7.4 Are on-time and delinquency metrics biased for customers with little history?'));
-  add(P(`Yes — a customer with one month of clean history looked as good as one with years of it. Stage 3 handles this in two ways. First, every window metric is a rate per month rather than a total. Second, points are pulled toward the average when few months were observed (section 5.6). The result: customers whose account was less than six months old were approved ${pct(hist['<6'].approval_rate)} of the time, against ${pct(hist['12+'].approval_rate)} for accounts of a year or more, and their real bad rate (${pct(hist['<6'].bad_rate)}) was indeed higher (${pct(hist['12+'].bad_rate)} for a year or more). Short history is not rewarded.`));
+  add(P(`Yes — a customer with one month of clean history looked as good as one with years of it. Stage 3 handles this in two ways. First, money-based metrics are averaged over the months actually observed, and the payment metric is scored as "any overdraft in the window" rather than as a share of instalments, so a short record cannot look perfect by having few instalments. Second, points are pulled toward the average when few months were observed (section 5.6). The result: customers whose account was less than six months old were approved ${pct(hist['<6'].approval_rate)} of the time, against ${pct(hist['12+'].approval_rate)} for accounts of a year or more, and their real bad rate (${pct(hist['<6'].bad_rate)}) was indeed higher (${pct(hist['12+'].bad_rate)} for a year or more). Short history is not rewarded.`));
   add(table(['Account age at loan', 'Loans', 'Real bad rate', 'Average score', 'Approved'], d.history.map((h) => [
     `${h.history_bucket} months`, h.n, pct(h.bad_rate), Number(h.avg_score).toFixed(1), pct(h.approval_rate)])));
   add(gap());
   add(H2('7.5 Do some metrics count the same thing twice?'));
-  add(P(`Yes. The concern raised — spend-to-income and balance trend — is confirmed by the data: their rank correlation is ${pairText('spend_to_income', 'balance_trend')}. Stage 3 checks every pair (Figure 3) and keeps only the stronger metric of any pair at 0.5 or above. Penalty interest and overdraft events (${pairText('penalty_events', 'negative_balance_events')}) and lowest balance and balance volatility (${pairText('min_balance', 'balance_volatility')}) were also merged this way.`));
+  add(P(`Yes. The concern raised — spend-to-income and balance trend — is confirmed by the data: their rank correlation is ${pairText('spend_to_income', 'balance_trend')}. Stage 3 checks every pair (Figure 3) and keeps only the stronger metric of any pair at 0.5 or above. Penalty interest and overdraft events (${pairText('penalty_events', 'negative_balance_events')}) and lowest balance and balance volatility (${pairText('min_balance', 'balance_volatility')}) were handled the same way: the weaker metric of each pair was dropped.`));
   add(H2('7.6 Should metrics inside a criterion have their own weights?'));
   add(P('Yes. Stage 2 averaged the metrics inside a criterion equally. In Stage 3 each metric has its own weight from the regression, and the criterion weight is simply the sum (section 7.2). Inside Balance behaviour, for example, balance volatility carries about twice the weight of balance trend.'));
   add(H2('7.7 How much data is there?'));
@@ -285,7 +292,8 @@ function build(d) {
   add(bullet('One bank in one country in the 1990s. The method transfers to other data; the exact weights and cut-offs would need to be learned again.'));
   add(bullet('No declared income: income is estimated from money coming into the account.'));
   add(bullet('Each account has at most one loan, so repayment of earlier loans cannot be measured. Overdrafts and penalty interest are the closest signal available.'));
-  add(bullet(`Joint account carries the largest weight (${pct(d.weights.find((w) => w.metric === 'joint_account')?.weight)}) because none of the joint-account training loans went bad. With more data this weight would likely shrink.`));
+  add(bullet(`Joint account carries the ${rankWord} weight (${pct(jointW?.weight)}) and decides most of grade A, because none of the joint-account training loans went bad. With more data this weight would likely shrink.`));
+  add(bullet('The data has no date for when a second user joined an account, so joint-account status may have changed after the loan date. It is the only kept metric that cannot be checked point in time.'));
   add(bullet(`Most test loans are still running (only ${d.finished.find((f) => f.view_name === 'finished_A_vs_B' && f.split === 'test')?.n ?? 0} have finished), so some may still go bad.`));
 
   // Appendix

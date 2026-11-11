@@ -15,5 +15,7 @@ SELECT
     (COUNT(*) FILTER (WHERE months_observed IS NULL OR penalty_events IS NULL
                       OR min_balance IS NULL OR history_months IS NULL) = 0) AS nulls_ok,
     (COUNT(*) FILTER (WHERE last_trans_date >= loan_date OR first_trans_date < loan_date - 365) = 0) AS no_leak_ok,
-    (COUNT(*) FILTER (WHERE penalty_events > 0) BETWEEN 26 AND 30)   AS penalty_ok
+    (COUNT(*) FILTER (WHERE penalty_events > 0) BETWEEN 26 AND 30)   AS penalty_ok,
+    -- months_observed = months elapsed in the window (not calendar months touched): 0 < m <= 12
+    (MIN(months_observed) > 0 AND MAX(months_observed) <= 12.0)       AS months_ok
 FROM berka.loan_features;

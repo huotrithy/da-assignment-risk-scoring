@@ -32,10 +32,10 @@ train_avg AS (
     SELECT metric, AVG(band_points) AS avg_points FROM pts WHERE split = 'train' GROUP BY metric
 )
 SELECT p.loan_id, p.metric, p.raw_value, p.band, p.band_points,
-       ROUND(CASE WHEN p.window_metric
+       (CASE WHEN p.window_metric
                   THEN a.avg_points + (p.band_points - a.avg_points) * p.months_observed
                                       / (p.months_observed + (SELECT value FROM berka.scorecard_param WHERE name = 'shrink_k'))
-                  ELSE p.band_points END, 4) AS points
+                  ELSE p.band_points END) AS points
 FROM pts p JOIN train_avg a USING (metric);
 
 ALTER TABLE berka.loan_metric_points ADD PRIMARY KEY (loan_id, metric);
@@ -55,18 +55,20 @@ s AS (
         ROUND(MAX(crit_points) FILTER (WHERE criterion = 'balance'), 2)      AS balance_points,
         ROUND(MAX(crit_points) FILTER (WHERE criterion = 'relationship'), 2) AS relationship_points,
         ROUND(MAX(crit_points) FILTER (WHERE criterion = 'demographics'), 2) AS demographics_points,
-        ROUND(SUM(c.contribution), 2)                                        AS score
+        SUM(c.contribution)                                                  AS raw_score
     FROM berka.loan_features f JOIN crit c USING (loan_id)
     GROUP BY f.loan_id, f.split, f.is_bad, f.status
 ),
 p AS (SELECT name, value FROM berka.scorecard_param)
-SELECT s.*,
-    CASE WHEN s.score >= (SELECT value FROM p WHERE name = 'grade_A') THEN 'A'
-         WHEN s.score >= (SELECT value FROM p WHERE name = 'grade_B') THEN 'B'
-         WHEN s.score >= (SELECT value FROM p WHERE name = 'grade_C') THEN 'C'
-         WHEN s.score >= (SELECT value FROM p WHERE name = 'grade_D') THEN 'D'
+SELECT s.loan_id, s.split, s.is_bad, s.status, s.payment_points, s.income_points, s.balance_points,
+    s.relationship_points, s.demographics_points,
+    ROUND(s.raw_score, 2)                                                    AS score,   -- shown rounded; grade uses the exact value
+    CASE WHEN s.raw_score >= (SELECT value FROM p WHERE name = 'grade_A') THEN 'A'
+         WHEN s.raw_score >= (SELECT value FROM p WHERE name = 'grade_B') THEN 'B'
+         WHEN s.raw_score >= (SELECT value FROM p WHERE name = 'grade_C') THEN 'C'
+         WHEN s.raw_score >= (SELECT value FROM p WHERE name = 'grade_D') THEN 'D'
          ELSE 'E' END::char(1)                                               AS grade,
-    s.score >= (SELECT value FROM p WHERE name = 'approve_cutoff')            AS approved
+    s.raw_score >= (SELECT value FROM p WHERE name = 'approve_cutoff')            AS approved
 FROM s;
 
 ALTER TABLE berka.loan_score ADD PRIMARY KEY (loan_id);

@@ -70,10 +70,20 @@ test('fitLogistic stays finite on a perfectly separating column', () => {
   assert.ok(m.coef[0] < 0);
 });
 
-test('weightsFromCoef normalises |coef|*sd to 1', () => {
-  const w = sc.weightsFromCoef([-2, 1], [1, 1]);
+test('weightsFromCoef normalises |coef| to 1', () => {
+  const w = sc.weightsFromCoef([-2, 1]);
   close(w[0], 2 / 3);
   close(w[1], 1 / 3);
+});
+
+test('weighted score ranks loans the same way as the regression', () => {
+  // metric 0 has a big coefficient but small spread; the score must still follow the model
+  const coef = [-3, -1];
+  const w = sc.weightsFromCoef(coef, [0.1, 1]);
+  const a = [1, 0], b = [0, 1];                         // points/100 of two loans
+  const lin = (p) => coef[0] * p[0] + coef[1] * p[1];   // lower = safer
+  const score = (p) => w[0] * p[0] + w[1] * p[1];       // higher = safer
+  assert.equal(lin(a) < lin(b), score(a) > score(b));
 });
 
 test('gradeCutoffs approves only above-average-safety scores and orders grades', () => {

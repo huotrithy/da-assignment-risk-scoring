@@ -65,9 +65,9 @@ Loan status: A = finished, paid; B = finished, not paid; C = running, on time; D
 |---|---|---|
 | Overdraft events | trans.balance | transactions leaving a negative balance |
 | Penalty-interest charges | trans.k_symbol | transactions with purpose `penalty_interest` |
-| Loan payment ÷ monthly income | loan, trans | monthly payment ÷ average monthly credits |
+| Loan payment ÷ monthly income | loan, trans | monthly payment ÷ (credits ÷ months elapsed) |
 | Income sources | trans | distinct partner accounts sending incoming transfers |
-| Monthly money in | trans | credits ÷ months observed |
+| Monthly money in | trans | credits ÷ months elapsed in the window |
 | Balance volatility | trans.balance | std. deviation ÷ mean of month-end balances |
 | Lowest balance | trans.balance | minimum balance in the window |
 | Balance trend | trans.balance | slope of month-end balance per month ÷ mean balance |

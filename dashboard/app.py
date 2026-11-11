@@ -323,7 +323,7 @@ with tab_ev:
 
     st.subheader("4 · Weights learned from the data")
     st.caption(f"Logistic regression of 'went bad' on each kept metric's points (training loans, L2 = {P['l2']:.0f}). "
-               "Weight = how much the metric moves the prediction × how much it varies, scaled to 100%.")
+               "Weight = size of the metric's regression coefficient, scaled so all weights add up to 100%. All points share the same 0–100 scale, so the score ranks loans exactly as the regression does.")
     w = data["weights"].copy()
     w["Metric"], w["Criterion"] = w["metric"].map(METRIC_LABEL), w["criterion"].map(CRITERIA)
     wl, wr = st.columns([3, 2])

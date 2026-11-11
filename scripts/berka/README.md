@@ -50,26 +50,27 @@ Rules that produce those numbers (all in `fit_scorecard.js`):
   moves in one direction; points from weight of evidence, scaled 0–100.
 - **Short history:** window metrics are pulled toward the average: `avg + (points − avg) · m / (m + k)`,
   m = months observed; k chosen from {3, 6, 12} by best training Gini.
-- **Weights:** L2 logistic regression of bad on the points; weight = |coefficient| × spread of points,
-  normalised to 100%.
+- **Weights:** L2 logistic regression of bad on the points; weight = |coefficient| ÷ Σ|coefficient|, so the
+  score ranks loans exactly as the regression does. Constants are stored at full precision.
 - **Cut-offs:** walk the score deciles from the top and approve each while its own bad rate is below
-  the portfolio average; A/B/C split the approved range in thirds, D/E the rejected range in half.
+  the portfolio average; A/B/C split the approved range in thirds, D/E the rejected range in half; each
+  cut sits midway between neighbouring scores. `checks/score_check.sql` verifies SQL grades = fit grades.
 - **Score:** Σ weight × points, 0–100. No 300–850 scaling.
 - **Gender** is decoded (birth number) but never used for scoring.
 
-## Results (run 2026-11-11)
+## Results (run 2026-11-12)
 
-Kept metrics and weights: balance volatility 20.9%, overdraft (negative-balance) events 19.4%,
-debt-to-income 9.4%, joint account 32.9%, balance trend 10.4%, income sources 7.0%. Shrink k = 3.
-Cut-offs: A ≥ 68.41, B ≥ 55.75, C ≥ 49.04 (approve), D ≥ 40.62, else E.
+Kept metrics and weights: overdraft (negative-balance) events 33.9%, joint account 22.6%, balance
+volatility 22.0%, debt-to-income 10.8%, balance trend 6.7%, income sources 4.1%. Shrink k = 3.
+Cut-offs: A ≥ 73.08, B ≥ 65.30, C ≥ 61.23 (approve), D ≥ 53.53, else E.
 
 | | Gini | Loans | Bad | Approved | Bad rate approved | Bad rate rejected |
 |---|---|---|---|---|---|---|
-| Train | 0.727 | 477 | 64 | 60.0% | 2.8% | 29.3% |
-| Test | 0.933 | 205 | 12 | 66.8% | 0.0% | 17.6% |
+| Train | 0.741 | 477 | 64 | 60.4% | 2.8% | 29.6% |
+| Test | 0.936 | 205 | 12 | 67.3% | 0.0% | 17.9% |
 
-Bad rate by grade A→E: train 0.0 / 2.1 / 6.4 / 15.6 / 43.2%; test 0.0 / 0.0 / 0.0 / 2.9 / 33.3%.
+Bad rate by grade A→E: train 0.0 / 1.0 / 7.3 / 16.8 / 42.6%; test 0.0 / 0.0 / 0.0 / 2.8 / 35.5%.
 Caveat: the test set has only 12 bad loans and 9 finished loans, so its Gini is uncertain.
-Customers with < 6 months of history are approved less often (35.7%) than those with 12+ (67.6%).
+Customers with < 6 months of history are approved less often (36.9%) than those with 12+ (68.4%).
 
 The live numbers are always in the validation views; re-run `npm run scorecard` to refresh.

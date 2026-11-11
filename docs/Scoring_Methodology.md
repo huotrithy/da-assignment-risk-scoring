@@ -60,13 +60,13 @@ Result (live values in `berka.metric_evidence`):
 | Lowest balance | −0.51 | duplicate of balance volatility (r −0.58) |
 | Overdraft events | 0.31 | kept |
 | Penalty-interest charges | 0.29 | duplicate of overdraft events (r 0.92) |
-| Loan payment ÷ monthly income | 0.27 | kept |
+| Loan payment ÷ monthly income | 0.25 | kept |
 | Joint account | −0.25 | kept |
 | Balance trend | −0.19 | kept |
 | Number of income sources | −0.17 | kept |
-| Account age | −0.10 | duplicate of balance trend (r −0.50) |
+| Account age | −0.10 | duplicate of balance trend (r −0.50, exactly at the limit) |
 | Spend ÷ income | 0.07 | weak |
-| Monthly money in | −0.05 | weak |
+| Monthly money in | −0.04 | weak |
 | Has a card | −0.04 | weak |
 | District unemployment | 0.04 | weak |
 | Age | 0.03 | weak |
@@ -86,25 +86,28 @@ who else is scored in the same batch.
 ## 5. Weights
 
 An L2-regularised logistic regression (L2 = 1) predicts "went bad" from the kept metrics' points.
-Each metric's weight = |coefficient| × standard deviation of its points, scaled so all weights sum
-to 100%. A criterion's weight is the sum of its metrics' weights.
+Each metric's weight = |coefficient| ÷ the sum of all |coefficients|, so the weights sum to 100%.
+All points share the same 0–100 scale and every coefficient is negative, so the weighted score ranks
+loans exactly as the regression does. A criterion's weight is the sum of its metrics' weights.
 
 | Metric | Criterion | Weight |
 |---|---|---|
-| Joint account | Account relationship | 32.9% |
-| Balance volatility | Balance behaviour | 20.9% |
-| Overdraft events | Payment behaviour | 19.4% |
-| Balance trend | Balance behaviour | 10.4% |
-| Loan payment ÷ monthly income | Income & capacity | 9.4% |
-| Number of income sources | Income & capacity | 7.0% |
+| Overdraft events | Payment behaviour | 33.9% |
+| Joint account | Account relationship | 22.6% |
+| Balance volatility | Balance behaviour | 22.0% |
+| Loan payment ÷ monthly income | Income & capacity | 10.8% |
+| Balance trend | Balance behaviour | 6.7% |
+| Number of income sources | Income & capacity | 4.1% |
 
-Criteria: Account relationship 32.9%, Balance behaviour 31.3%, Payment behaviour 19.4%,
-Income & capacity 16.4%, Demographics 0%.
+Criteria: Payment behaviour 33.9%, Balance behaviour 28.7%, Account relationship 22.6%,
+Income & capacity 14.8%, Demographics 0%. The order is close to the Stage 2 judgement (payment first);
+the numbers are now measured.
 
 ## 6. Short history
 
-Metrics measured over the 12-month window (overdraft events, balance volatility, DTI) are less
-reliable when only a few months were observed. Their points are pulled toward the training average:
+Money-based metrics are averaged over the months actually elapsed in the window (from the later of
+account opening or 365 days before the loan, to the loan date). Metrics measured over the window
+(overdraft events, balance volatility, DTI) are less reliable when only a few months were observed. Their points are pulled toward the training average:
 
     points = average + (points − average) × months ÷ (months + k)
 
@@ -121,22 +124,25 @@ Cut-offs are set on the training scores:
   is below the portfolio average (13.4% on the training loans). The approve line is the bottom of the
   last decile that passes.
 - **A / B / C:** the approved range split into thirds. **D / E:** the rejected range split in half.
+- Each cut sits midway between the boundary score and the next lower score, so rounding cannot move a
+  loan across it.
 
-Current cut-offs: A ≥ 68.41, B ≥ 55.75, C ≥ 49.04 (approve), D ≥ 40.62, otherwise E.
+Current cut-offs: A ≥ 73.08, B ≥ 65.30, C ≥ 61.23 (approve), D ≥ 53.53, otherwise E.
 
 ## 8. Validation
 
 | | Gini | Loans | Bad | Approved | Bad rate if approved | Bad rate if rejected |
 |---|---|---|---|---|---|---|
-| Train | 0.73 | 477 | 64 | 60.0% | 2.8% | 29.3% |
-| Test | 0.93 | 205 | 12 | 66.8% | 0.0% | 17.6% |
+| Train | 0.74 | 477 | 64 | 60.4% | 2.8% | 29.6% |
+| Test | 0.94 | 205 | 12 | 67.3% | 0.0% | 17.9% |
 
-Bad rate by grade A→E: train 0.0 / 2.1 / 6.4 / 15.6 / 43.2%; test 0.0 / 0.0 / 0.0 / 2.9 / 33.3%.
+Bad rate by grade A→E: train 0.0 / 1.0 / 7.3 / 16.8 / 42.6%; test 0.0 / 0.0 / 0.0 / 2.8 / 35.5%.
 
 The test set has only 12 bad loans, so its Gini is a direction, not a precise number. Running loans
-may still go bad, so the score is also checked on finished loans only (train Gini 0.72) and on loans
-issued at least a year before the data ends (test Gini 0.95, 47 loans). Customers with less than six
-months of history are approved less often (35.7%) than those with a year or more (67.6%).
+may still go bad, so the score is also checked on finished loans only (train Gini 0.72; the test set has
+only 9 finished loans and none of them went bad, so it cannot be checked this way) and on loans issued
+at least a year before the data ends (test Gini 0.94, 47 loans). Customers with less than six months of
+history are approved less often (36.9%) than those with a year or more (68.4%).
 
 ## 9. Limitations
 
@@ -145,7 +151,9 @@ months of history are approved less often (35.7%) than those with a year or more
 - No declared income — income is estimated from money coming into the account.
 - Each account has at most one loan, so past loan repayment cannot be measured directly;
   overdraft and penalty interest are the closest available signal.
-- Joint account carries the largest weight because none of the joint-account training loans went bad;
-  with more data this weight would likely shrink.
+- Joint account carries the second-largest weight (22.6%) and decides most of grade A, because none of
+  the joint-account training loans went bad; with more data this weight would likely shrink.
+- The data has no date for when a second user joined an account, so joint-account status may have
+  changed after the loan date — the only kept metric that cannot be checked point in time.
 
 Pipeline, tables and run commands: `scripts/berka/README.md`.

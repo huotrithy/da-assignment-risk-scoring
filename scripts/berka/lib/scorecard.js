@@ -123,11 +123,11 @@ function fitLogistic(X, y, { l2 = 1.0, iters = 5000, lr = 0.5 } = {}) {
   return { intercept: b0, coef: w };
 }
 
-// Weight of each metric = |coef| x spread of its points, normalised to sum 1.
-function weightsFromCoef(coef, sd) {
-  const raw = coef.map((c, i) => Math.abs(c) * sd[i]);
-  const tot = raw.reduce((s, v) => s + v, 0);
-  return raw.map((v) => v / tot);
+// Weight of each metric = |coef| / sum of |coef|. All points share the 0-100 scale and every kept
+// coefficient is negative, so sum(weight x points) ranks loans exactly as the regression does.
+function weightsFromCoef(coef) {
+  const tot = coef.reduce((s, c) => s + Math.abs(c), 0);
+  return coef.map((c) => Math.abs(c) / tot);
 }
 
 const quantileDesc = (sortedDesc, q) => sortedDesc[Math.min(sortedDesc.length - 1, Math.max(0, Math.ceil(q * sortedDesc.length) - 1))];
@@ -151,7 +151,11 @@ function gradeCutoffs(scores, y, portfolioBadRate) {
   const rejected = desc.filter((s) => s < approve);
   const A = quantileDesc(approved, 1 / 3), B = quantileDesc(approved, 2 / 3);
   const D = rejected.length ? quantileDesc(rejected, 1 / 2) : approve;
-  return { A, B, C: approve, approve, D: Math.min(D, approve) };
+  // Put each cut midway between the boundary score and the next lower score, so tiny rounding
+  // differences can never move a boundary loan across it.
+  const mid = (c) => { const lower = desc.find((s) => s < c); return lower === undefined ? c : (c + lower) / 2; };
+  const C = mid(approve);
+  return { A: mid(A), B: mid(B), C, approve: C, D: Math.min(mid(D), C) };
 }
 
 function grade(score, c) {

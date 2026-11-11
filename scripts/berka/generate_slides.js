@@ -108,7 +108,7 @@ async function main() {
       ['1', 'Why these metrics? Any proof?', `Tested on ${int(d.counts.loans)} real loans; ${kept.length} of ${d.evidence.length} kept`, String(slideNo('strength'))],
       ['2', 'Why 35% payment, 25% income …?', 'Weights learned by logistic regression', String(slideNo('weights'))],
       ['3', 'Why × 5.5 + 300 (300–850)?', 'Removed — score is 0–100', String(slideNo('score'))],
-      ['4', 'Short history biases on-time / delinquency', 'Per-month metrics, pulled toward average when history is short', String(slideNo('history'))],
+      ['4', 'Short history biases on-time / delinquency', 'Averaged over months actually seen; pulled toward average when history is short', String(slideNo('history'))],
       ['5', 'Spend-to-income and balance trend overlap', `Confirmed (r = ${corr('spend_to_income', 'balance_trend')}); duplicates removed`, String(slideNo('duplicates'))],
       ['6', 'Metrics inside a criterion should have own weights', 'Every metric has its own weight', String(slideNo('weights'))],
       ['7', 'How much data? How many months?', `${int(d.counts.trans)} transactions, 6 years, 12 months per loan`, String(slideNo('volume'))],
@@ -317,10 +317,10 @@ async function main() {
     8.2, 1.55, 4.5, [2.0, 1.4, 1.1], { size: 13, rowH: 0.42 });
     panel(s, 0.6, 4.85, 12.1, 1.8, BLUE, 'How', [
       'Logistic regression predicts "went bad" from each kept metric\'s points (training loans)',
-      'Weight = how strongly the metric moves the prediction × how much it varies, scaled to 100%',
+      'Weight = size of the regression coefficient, scaled to 100% — the score ranks loans exactly as the model does',
       'Each metric has its own weight; a criterion\'s weight is the sum of its metrics',
     ], { size: 14 });
-    s.addNotes(tx('Answers questions 2 and 6. Demographics ends at 0% because age and district did not predict bad loans. Joint account is the strongest single signal in this data.'));
+    s.addNotes(tx('Answers questions 2 and 6. Demographics ends at 0% because age and district did not predict bad loans. Note the order: payment first, as in Stage 2 — but now measured, not chosen.'));
   };
 
   builders.score = () => {
@@ -349,7 +349,7 @@ async function main() {
       'Few months observed → points pulled toward the average',
       'A one-month clean record cannot reach 100',
       `k chosen from 3 / 6 / 12 by best training Gini → k = ${P.shrink_k}`,
-      'All window metrics are per month, not totals',
+      'Money metrics are averaged over the months actually observed',
     ], { size: 16 });
     table(s, ['Account age at loan', 'Loans', 'Really went bad', 'Approved'], d.history.map((h) => [
       `${h.history_bucket} months`, h.n, pct(h.bad_rate), { text: pct(h.approval_rate), bold: true }]),
@@ -395,8 +395,9 @@ async function main() {
     const s = content('6 · Results', 'What drives each grade');
     image(s, 'criteria_by_grade.png', 0.5, 1.45, 7.6, 3.4);
     panel(s, 8.4, 1.55, 4.3, 5.05, ORANGE, 'Honest reading', [
-      'Grade A is mostly joint accounts (two users)',
-      `None of the ${d.bands.find((b) => b.metric === 'joint_account' && b.lower !== null)?.n_train ?? ''} joint accounts in training went bad, so the data gives this metric the largest weight`,
+      'Almost no one in A–D has an overdraft, so grade A is decided mostly by joint account (two users)',
+      `None of the ${d.bands.find((b) => b.metric === 'joint_account' && b.lower !== null)?.n_train ?? ''} joint accounts in training went bad (weight ${pct(d.weights.find((w) => w.metric === 'joint_account').weight, 0)})`,
+      'The data has no date for when a second user joined, so this metric cannot be checked point in time',
       'Balance behaviour separates C from D and E',
       'Overdrafts mark out grade E',
       'With more data the joint-account weight would likely shrink',
@@ -431,7 +432,7 @@ async function main() {
       'One Czech bank in the 1990s — the method transfers, the exact numbers may not',
       'No declared income: estimated from money coming in',
       'One loan per account: earlier repayment cannot be measured; overdraft is the closest signal',
-      'Joint account weight driven by a group with no bad loans',
+      'Joint account: driven by a group with no bad loans, and has no date for when the second user joined',
     ], { size: 16 });
     panel(s, 6.8, 1.55, 5.9, 3.6, GREEN, 'Next steps', [
       'Re-learn the scorecard on the bank\'s own, larger loan history',

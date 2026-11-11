@@ -12,6 +12,6 @@ SELECT
        LEFT JOIN mono m USING (metric) WHERE COALESCE(m.n_bands, 1) < 2)                    AS two_bands_ok,
     (SELECT BOOL_AND(monotonic) FROM mono)                                                    AS monotonic_ok,
     (SELECT verdict <> 'kept' OR reason <> '' FROM berka.metric_evidence WHERE metric = 'age_at_loan') AS age_ok,
-    (SELECT COUNT(*) = 11 FROM berka.scorecard_param)                                         AS params_ok,
+    (SELECT COUNT(*) = 16 FROM berka.scorecard_param)                                         AS params_ok,
     (SELECT BOOL_AND(coef < 0) FROM berka.scorecard_weight)                                   AS coef_ok,
     (SELECT COUNT(*) FROM berka.scorecard_weight)                                             AS n_kept;
