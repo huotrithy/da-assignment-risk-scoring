@@ -10,6 +10,7 @@
     "scorecard": "node scripts/berka/run_all.js"
   },
   "devDependencies": {
-    "playwright-core": "^1.48.2"
+    "playwright-core": "^1.48.2",
+    "pptxgenjs": "^3.12.0"
   }
 }
