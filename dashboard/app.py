@@ -284,16 +284,26 @@ with tab_ev:
     st.caption("Training loans split into up to four groups of similar size by the metric's value (lowest → highest). "
                "Equal values stay in the same group, so a yes/no metric shows two groups (no, yes). "
                "A useful metric shows bad rate climbing or falling steadily.")
-    q = ev.melt(id_vars=["Metric", "status"], value_vars=["bad_rate_q1", "bad_rate_q2", "bad_rate_q3", "bad_rate_q4"],
+    q = ev.melt(id_vars=["metric", "Metric", "status"],
+                value_vars=["bad_rate_q1", "bad_rate_q2", "bad_rate_q3", "bad_rate_q4"],
                 var_name="quartile", value_name="bad_rate")
     q["quartile"] = q["quartile"].str[-2:].str.upper()
     q = q.dropna(subset=["bad_rate"])
-    small = alt.Chart(q).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
-        x=alt.X("quartile:N", title=None, axis=alt.Axis(labelAngle=0)),
+    two_groups = {"has_card": ["No", "Yes"], "joint_account": ["No", "Yes"],
+                  "negative_balance_events": ["None", "Any"], "penalty_events": ["None", "Any"],
+                  "income_sources": ["None", "1+"]}
+    q["group"] = q.apply(lambda r: two_groups[r["metric"]][int(r["quartile"][1]) - 1]
+                         if r["metric"] in two_groups else r["quartile"], axis=1)
+    q["label"] = q["bad_rate"].map(lambda v: f"{100 * v:.0f}%")
+    qb = alt.Chart().encode(x=alt.X("group:N", title=None, sort=["Q1", "Q2", "Q3", "Q4", "No", "None", "Yes", "Any", "1+"],
+                                    axis=alt.Axis(labelAngle=0)))
+    qbars = qb.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
         y=alt.Y("bad_rate:Q", title=None, axis=alt.Axis(format="%", tickCount=3)),
         color=alt.Color("status:N", scale=alt.Scale(domain=["Kept", "Dropped"], range=[APPROVE_COLOR, MUTED]), legend=None),
-        tooltip=["Metric:N", alt.Tooltip("quartile:N", title="Quartile"), alt.Tooltip("bad_rate:Q", title="Bad rate", format=".1%")]
-    ).properties(width=150, height=110).facet(facet=alt.Facet("Metric:N", sort=order, title=None), columns=5)
+        tooltip=["Metric:N", alt.Tooltip("group:N", title="Group"), alt.Tooltip("bad_rate:Q", title="Bad rate", format=".1%")])
+    qtext = qb.mark_text(dy=-6, fontSize=10, color="#3d3d3a").encode(y="bad_rate:Q", text="label:N")
+    small = alt.layer(qbars, qtext, data=q).properties(width=150, height=110) \
+        .facet(facet=alt.Facet("Metric:N", sort=order, title=None), columns=5).resolve_scale(x="independent")
     st.altair_chart(small)
 
     st.subheader("3 · Which metrics measure the same thing?")
@@ -368,7 +378,7 @@ with tab_crit:
     long["Criterion"] = long["criterion"].str.replace("_points", "").map(CRITERIA)
     hm = long.groupby(["grade", "Criterion"])["points"].mean().reset_index()
     base = alt.Chart(hm).encode(x=alt.X("grade:N", sort=GRADES, title="Grade", axis=alt.Axis(labelAngle=0)),
-                                y=alt.Y("Criterion:N", title=None))
+                                y=alt.Y("Criterion:N", title=None, axis=alt.Axis(labelLimit=260)))
     rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
         color=alt.Color("points:Q", scale=alt.Scale(range=BLUE_RAMP, domain=[0, 100]), title="Points"),
         tooltip=["Criterion:N", "grade:N", alt.Tooltip("points:Q", format=".1f")])

@@ -1,11 +1,15 @@
 {
   "dependencies": {
     "@faker-js/faker": "^10.6.0",
+    "docx": "^9.5.1",
     "pg": "^8.23.0"
   },
   "scripts": {
     "test": "node --test \"tests/**/*.test.js\"",
     "fit": "node scripts/berka/fit_scorecard.js",
     "scorecard": "node scripts/berka/run_all.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.48.2"
   }
 }
