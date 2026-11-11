@@ -2,5 +2,8 @@
   "dependencies": {
     "@faker-js/faker": "^10.6.0",
     "pg": "^8.23.0"
+  },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
   }
 }
