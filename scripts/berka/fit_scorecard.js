@@ -34,12 +34,13 @@ const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / (a.length - 1)); };
 const r3 = (v) => (v === null || !Number.isFinite(v) ? null : Math.round(v * 1000) / 1000);
 
+// Bad rate per quartile group, lowest -> highest value. Tied values stay in the same group, so a
+// yes/no metric gives 2 groups and a mostly-zero count gives fewer than 4 (unused groups = null).
 function quartileBadRates(x, y) {
-  const rows = x.map((v, i) => [v, y[i]]).filter(([v]) => v !== null).sort((a, b) => a[0] - b[0]);
-  return [0, 1, 2, 3].map((q) => {
-    const g = rows.slice(Math.floor((q * rows.length) / 4), Math.floor(((q + 1) * rows.length) / 4));
-    return g.length ? g.reduce((s, r) => s + r[1], 0) / g.length : null;
-  });
+  const cuts = sc.quantileCuts(x, 4);
+  const n = new Array(4).fill(0), bad = new Array(4).fill(0);
+  x.forEach((v, i) => { if (v !== null) { const b = sc.assignBand(v, cuts); n[b]++; bad[b] += y[i]; } });
+  return n.map((c, b) => (c ? bad[b] / c : null));
 }
 
 // Bands + points for one metric, learned on train.
