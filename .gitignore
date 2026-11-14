@@ -234,3 +234,6 @@ data/berka/
 
 # Office lock files
 ~$*
+
+# Saved chat transcripts (kept locally, not in git)
+material/*.txt
