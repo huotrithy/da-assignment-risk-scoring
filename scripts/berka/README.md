@@ -26,7 +26,7 @@ npm test                                 # unit tests for the parsing and scorec
 | Fit | `fit_scorecard.js`, `01_constants_schema.sql`, `lib/scorecard.js` | evidence, bands, points, weights, cut-offs (train loans only) |
 | Score | `20_score.sql` | `loan_metric_points`, `loan_score` |
 | Validate | `30_validate.sql` | views `validation_summary`, `validation_by_grade`, `validation_finished`, `validation_history` |
-| Checks | `checks/*.sql` | every `*_ok` column must be `true` |
+| Checks | `checks/*.sql` | run automatically after each stage by `run_all.js`; every `*_ok` column must be `true` |
 
 **Outcome:** defaulted = loan status B (finished, unpaid) or D (running, in debt): 76 of 682 loans (11.1%).
 **Split:** earliest 70% of loans by date = train (477), latest 30% = test (205).
