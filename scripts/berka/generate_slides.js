@@ -156,8 +156,32 @@ async function main() {
   const share = (g) => (Number(g) + 1) / 2;   // Gini -> share of (repaid, defaulted) pairs ranked correctly
   const nDisponent = Number(d.counts.dispositions) - Number(d.counts.accounts);
 
+  // Small bar chart of the real default rate per value group, drawn as shapes so it stays sharp at any size.
+  const TWO_GROUPS = { has_card: ['No', 'Yes'], joint_account: ['No', 'Yes'], negative_balance_events: ['None', 'Any'],
+    penalty_events: ['None', 'Any'], income_sources: ['None', '1+'] };
+  function miniBars(s, e, x, y, w, h, sub) {
+    const vals = [e.bad_rate_q1, e.bad_rate_q2, e.bad_rate_q3, e.bad_rate_q4].filter((v) => v !== null && v !== undefined).map(Number);
+    const labels = TWO_GROUPS[e.metric] || ['Q1', 'Q2', 'Q3', 'Q4'];
+    const color = e.verdict === 'kept' ? BLUE : 'A6A6A6';
+    const max = Math.max(...vals) > 0.4 ? 1 : 0.4;
+    s.addShape(pptx.ShapeType.rect, { x, y, w, h, fill: { color: PANEL }, line: { color: PANEL } });
+    s.addText(tx(METRIC[e.metric]), { x: x + 0.15, y: y + 0.08, w: w - 0.3, h: 0.4, fontFace: FONT, fontSize: sub ? 14 : 16, bold: true, color: NAVY });
+    if (sub) s.addText(tx(sub), { x: x + 0.15, y: y + 0.45, w: w - 0.3, h: 0.3, fontFace: FONT, fontSize: 11, color: MUTED });
+    const top = y + (sub ? 1.15 : 0.9), bottom = y + h - 0.45, ph = bottom - top;
+    const px = x + 0.3, pw = w - 0.6, slot = pw / vals.length, bw = slot * 0.62;
+    s.addText(tx(`scale 0–${max * 100}%`), { x: x + w - 1.3, y: y + h - 0.2, w: 1.25, h: 0.18, fontFace: FONT, fontSize: 8, color: MUTED, align: 'right' });
+    vals.forEach((v, i) => {
+      const bh = Math.max((v / max) * ph, 0.02), bx = px + i * slot + (slot - bw) / 2;
+      s.addShape(pptx.ShapeType.rect, { x: bx, y: bottom - bh, w: bw, h: bh, fill: { color }, line: { color } });
+      s.addText(pct(v, 0), { x: bx - 0.2, y: bottom - bh - 0.3, w: bw + 0.4, h: 0.28, fontFace: FONT, fontSize: 13, bold: true, color: INK, align: 'center', valign: 'bottom' });
+      s.addText(tx(labels[i]), { x: bx - 0.2, y: bottom + 0.03, w: bw + 0.4, h: 0.26, fontFace: FONT, fontSize: 12, color: MUTED, align: 'center' });
+    });
+    s.addShape(pptx.ShapeType.line, { x: px, y: bottom, w: pw, h: 0, line: { color: 'BFBFBF', width: 1 } });
+  }
+  const GROUPS_NOTE = 'Loans are split into four equal groups by the metric value (Q1 lowest → Q4 highest). Bar = share of the group that defaulted (training loans). Yes/no metrics show two groups.';
+
   const order = ['title', 'problem', 'whySwitch', 'changed', 'recap', 'terms', 'berka', 'volume', 'tables', 'model', 'workflow', 'window', 'method',
-    'candidates', 'gini', 'strength', 'groups', 'duplicates', 'critPayment', 'critIncome', 'critBalance', 'critRelationship',
+    'candidates', 'gini', 'strength', 'groupsKept', 'groupsDropped', 'duplicates', 'critPayment', 'critIncome', 'critBalance', 'critRelationship',
     'points', 'weights', 'score', 'history', 'results', 'example', 'gradeA', 'dashboard', 'quality', 'limits', 'end'];
   const slideNo = (k) => order.indexOf(k) + 1;
   const builders = {};
@@ -330,7 +354,7 @@ async function main() {
     const steps = [
       ['download', 'Load', 'Download, translate and load the 8 tables', 'load_berka.js'],
       ['bars', 'Features', `${d.evidence.length} metrics per loan from the 12 months before it`, '10_features.sql'],
-      ['scale', 'Fit', 'Learn buckets, points, weights and cut-offs on the training loans', 'fit_scorecard.js'],
+      ['scale', 'Fit', `Learn the scorecard from the training loans (steps 2–5 on slide ${slideNo('method')})`, 'fit_scorecard.js'],
       ['calc', 'Score', 'Points → score 0–100 → grade', '20_score.sql'],
       ['flask', 'Validate', 'Check the result on the test loans', '30_validate.sql'],
       ['monitor', 'Dashboard', 'Streamlit, live from the tables', 'dashboard/app.py'],
@@ -442,16 +466,20 @@ async function main() {
     s.addNotes(tx('Step 2 of the method, and the answer to question 1. Each candidate metric is measured against real outcomes. Several assumptions of the previous version, like age, did not hold up and were dropped.'));
   };
 
-  builders.groups = () => {
-    const s = content('4 · Evidence', 'Real default rate across each metric');
-    image(s, 'metric_quartiles.png', 0.5, 1.4, 9.0, 5.35);
-    panel(s, 9.8, 1.55, 2.9, 5.05, BLUE, 'Read it like this', [
-      'Loans are split into four equal groups by the metric value (Q1 lowest → Q4 highest)',
-      'Bar = share of the group that defaulted',
-      { text: `Balance volatility: ${pct(ev.balance_volatility.bad_rate_q1, 0)} → ${pct(ev.balance_volatility.bad_rate_q4, 0)}`, bold: true },
-      'Flat bars (age, district) = no signal',
-    ], { size: 14 });
-    s.addNotes(tx('The same test without any formula: the share of loans that really defaulted, per value group. A useful metric climbs or falls steadily; a useless one stays flat.'));
+  builders.groupsKept = () => {
+    const s = content('4 · Evidence', `Kept metrics: the default rate changes across the groups`);
+    kept.forEach((e, i) => miniBars(s, e, 0.6 + (i % 3) * 4.1, 1.45 + Math.floor(i / 3) * 2.7, 3.9, 2.55));
+    note(s, GROUPS_NOTE);
+    s.addNotes(tx(`The same test without any formula: the share of loans that really defaulted, per value group. For the ${kept.length} kept metrics the default rate is clearly different between the groups. Balance volatility goes from ${pct(ev.balance_volatility.bad_rate_q1, 0)} in the most stable group to ${pct(ev.balance_volatility.bad_rate_q4, 0)} in the most volatile.`));
+  };
+  builders.groupsDropped = () => {
+    const s = content('4 · Evidence', 'Dropped metrics: flat bars, or a repeat of a kept metric');
+    const dropped = d.evidence.filter((e) => e.verdict !== 'kept');
+    const why = (e) => (e.verdict === 'dropped_duplicate' && twinOf(e.metric) ? `Dropped: repeats ${METRIC[twinOf(e.metric).m].toLowerCase()}`
+      : e.verdict === 'dropped_weak' ? 'Dropped: no clear difference' : VERDICT[e.verdict].replace(' — ', ': '));
+    dropped.forEach((e, i) => miniBars(s, e, 0.6 + (i % 4) * 3.075, 1.45 + Math.floor(i / 4) * 2.7, 2.875, 2.55, why(e)));
+    note(s, GROUPS_NOTE);
+    s.addNotes(tx('The metrics we dropped. Most have flat bars: the default rate is about the same whatever the value, so the metric tells us nothing. Lowest balance and penalty interest do show a difference, but they repeat a metric we already keep, as the next slide shows.'));
   };
 
   builders.duplicates = () => {
@@ -476,11 +504,23 @@ async function main() {
       { text: tx(`Weight ${pct(W_[m])} of the score · ${pct(W_[m] / CW[c], 0)} of ${CRIT[c].toLowerCase()}`), options: { fontSize: 12, color: BLUE, bold: true } }],
     { x: x + 0.22, y: y + 0.1, w: w - 0.35, h: 0.75, fontFace: FONT, valign: 'top' });
     const lab = (t) => ({ text: tx(t), options: { fontSize: 12, bold: true, color: MUTED, charSpacing: 1, breakLine: true } });
-    const body = (t, extra = {}) => ({ text: tx(t), options: { fontSize: 16, color: INK, breakLine: true, paraSpaceAfter: 12, ...extra } });
-    const bands = d.bands.filter((b) => b.metric === m).map((b) => `${bandText(b)}: ${pct(b.bad_rate, 0)}`).join('   ·   ');
-    s.addText([lab('QUESTION'), body(`“${q}”`, { italic: true }), lab('WHY IT SIGNALS RISK'), body(why), lab('HOW WE MEASURE IT (12 MONTHS BEFORE THE LOAN)'), body(how),
-      lab('EVIDENCE — DEFAULT RATE BY BUCKET (TRAINING)'), body(bands, { bold: true })],
-    { x: x + 0.22, y: y + 0.9, w: w - 0.35, h: h - 1.0, fontFace: FONT, valign: 'top' });
+    const body = (t, extra = {}) => ({ text: tx(t), options: { fontSize: 15, color: INK, breakLine: true, paraSpaceAfter: 12, ...extra } });
+    s.addText([lab('QUESTION'), body(`“${q}”`, { italic: true }), lab('WHY IT SIGNALS RISK'), body(why), lab('HOW WE MEASURE IT (12 MONTHS BEFORE THE LOAN)'), body(how)],
+    { x: x + 0.22, y: y + 0.9, w: w - 0.35, h: h - 2.55, fontFace: FONT, valign: 'top' });
+    // Buckets as coloured tiles (safest green → riskiest orange): value range, points, real default rate.
+    const bands = d.bands.filter((b) => b.metric === m);
+    const rank = [...bands].sort((p, q2) => Number(q2.points) - Number(p.points));
+    const palette = { 1: [GREEN], 2: [GREEN, ORANGE], 3: [GREEN, 'F9A825', ORANGE], 4: [GREEN, '7CB342', 'F9A825', ORANGE] }[bands.length] || [];
+    s.addText(tx('BUCKETS — POINTS AND REAL DEFAULT RATE (TRAINING LOANS)'), { x: x + 0.22, y: y + h - 1.62, w: w - 0.35, h: 0.25, fontFace: FONT, fontSize: 12, bold: true, color: MUTED, charSpacing: 1 });
+    const gap = 0.1, tw = Math.min((w - 0.44 - gap * (bands.length - 1)) / bands.length, 2.6);
+    bands.forEach((bd, i) => {
+      const bx = x + 0.22 + i * (tw + gap), fill = palette[rank.indexOf(bd)] || BLUE;
+      s.addShape(pptx.ShapeType.rect, { x: bx, y: y + h - 1.32, w: tw, h: 1.17, fill: { color: fill }, line: { color: 'FFFFFF' } });
+      s.addText([{ text: tx(bandText(bd)), options: { fontSize: 13, breakLine: true } },
+        { text: tx(`${Number(bd.points).toFixed(0)} pts`), options: { fontSize: 18, bold: true, breakLine: true } },
+        { text: tx(`${pct(bd.bad_rate, 0)} defaulted`), options: { fontSize: 12 } }],
+      { x: bx, y: y + h - 1.32, w: tw, h: 1.17, fontFace: FONT, color: 'FFFFFF', align: 'center', valign: 'middle', margin: 0 });
+    });
   };
   const critSlide = (c, extra) => {
     const ms = d.weights.filter((w) => w.criterion === c).map((w) => w.metric);
