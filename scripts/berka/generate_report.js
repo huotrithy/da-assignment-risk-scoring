@@ -1,18 +1,15 @@
 // Generate docs/Final_Report.docx from the live scorecard tables (no number is typed by hand).
 // Needs: npm run scorecard (tables) and node scripts/berka/capture_charts.js (images in docs/img/charts).
-// Usage: node scripts/berka/generate_report.js
+// Usage: node scripts/berka/generate_report.js [output.docx]
 const fs = require('fs');
 const path = require('path');
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType,
   ImageRun, AlignmentType, ShadingType, ExternalHyperlink, PageBreak, TableOfContents,
 } = require('docx');
-const { METRIC, CRIT, VERDICT, pct, f2, int, load, bandText, valueText } = require('./lib/report_data');
+const { ROOT, DASHBOARD_URL, METRIC, CRIT, VERDICT, STATUS, pct, f2, int, chart, checkText, load, pairText: pairOf, bandText, valueText } = require('./lib/report_data');
 
-const ROOT = path.join(__dirname, '..', '..');
-const IMG = path.join(ROOT, 'docs', 'img', 'charts');
-const OUT = path.join(ROOT, 'docs', 'Final_Report.docx');
-const DASHBOARD_URL = 'https://da-assignment.iamrithy.com/';
+const OUT = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, 'docs', 'Final_Report.docx');
 
 // ------------------------------------------------------------------ docx helpers
 const headings = [];
@@ -48,16 +45,10 @@ function table(header, rows, widths) {
 }
 const gap = () => new Paragraph({ text: '', spacing: { after: 120 } });
 
-function pngSize(file) {
-  const b = fs.readFileSync(file);
-  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
-}
 function figure(file, caption, widthPx = 600) {
-  const fp = path.join(IMG, file);
-  if (!fs.existsSync(fp)) throw new Error(`missing image ${fp} — run capture_charts.js`);
-  const { w, h } = pngSize(fp);
+  const { data, w, h } = chart(file);
   return [
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: fs.readFileSync(fp), transformation: { width: widthPx, height: Math.round((widthPx * h) / w) } })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data, transformation: { width: widthPx, height: Math.round((widthPx * h) / w) } })] }),
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: t(caption), italics: true, size: 18 })] }),
   ];
 }
@@ -65,21 +56,16 @@ function figure(file, caption, widthPx = 600) {
 // ------------------------------------------------------------------ document
 function build(d) {
   const P_ = d.param;
-  const S = Object.fromEntries(d.summary.map((r) => [r.split, r]));
-  const kept = d.evidence.filter((e) => e.verdict === 'kept');
+  const { S, kept, ev, nBad, histBy: hist } = d;
   const dropped = d.evidence.filter((e) => e.verdict !== 'kept');
-  const ev = Object.fromEntries(d.evidence.map((e) => [e.metric, e]));
   const weak = d.evidence.filter((e) => e.verdict === 'dropped_weak').map((e) => METRIC[e.metric]);
   const dups = d.evidence.filter((e) => e.verdict === 'dropped_duplicate').map((e) => METRIC[e.metric]);
   const listOf = (a) => { const l = a.map((x, i) => (i === 0 ? x : x.charAt(0).toLowerCase() + x.slice(1))); return l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}` : l.join(''); };
   const jointW = d.weights.find((w) => w.metric === 'joint_account');
   const jointRank = d.weights.findIndex((w) => w.metric === 'joint_account') + 1;
   const rankWord = ['', 'largest', 'second-largest', 'third-largest', 'fourth-largest'][jointRank] || `${jointRank}th-largest`;
-  const nBad = d.status.filter((s) => s.status === 'B' || s.status === 'D').reduce((a, s) => a + Number(s.n), 0);
   const gradeRow = (split) => d.byGrade.filter((g) => g.split === split).map((g) => pct(g.bad_rate)).join(' / ');
-  const hist = Object.fromEntries(d.history.map((h) => [h.history_bucket, h]));
-  const corrOf = (a, b) => d.corr.find((c) => (c.metric_a === a && c.metric_b === b) || (c.metric_a === b && c.metric_b === a));
-  const pairText = (a, b) => { const c = corrOf(a, b); return c ? Number(c.spearman).toFixed(2) : '< 0.5'; };
+  const pairText = (a, b) => pairOf(d, a, b);
 
   const body = [];
   const add = (...x) => body.push(...x.flat());
@@ -134,13 +120,12 @@ function build(d) {
   add(gap());
   add(H2('3.1 Outcome'));
   add(table(['Loan status', 'Meaning', 'Loans', 'Counted as'], d.status.map((s) => [s.status,
-    { A: 'Finished, fully paid', B: 'Finished, not paid', C: 'Running, paid on time so far', D: 'Running, in debt' }[s.status], int(s.n),
-    s.status === 'B' || s.status === 'D' ? 'Defaulted' : 'Repaid / on time'])));
+    STATUS[s.status], int(s.n), s.is_bad ? 'Defaulted' : 'Repaid / on time'])));
   add(gap());
   add(H2('3.2 History available before each loan'));
   add(P(`Accounts were open for ${Number(d.hist.mn).toFixed(1)} to ${Number(d.hist.mx).toFixed(1)} months before their loan (median ${Number(d.hist.med).toFixed(1)}). Every metric uses the 12 months before the loan start date; ${d.hist.omn} to 13 calendar months of transactions fall in that window (median ${d.hist.omed}). The average loan is ${int(d.hist.avg_amount)} with a median term of ${d.hist.med_dur} months.`));
   add(H2('3.3 Training and test loans'));
-  add(P(`Loans are ordered by date. The earliest 70% (${d.hist.ntr} loans, ${d.hist.btr} defaulted, up to ${d.hist.train_end}) are the training set: every constant in the scorecard is learned from them. The latest 30% (${d.hist.nte} loans, ${d.hist.bte} defaulted, from ${d.hist.test_start}) are the test set and are used only to check the result. Splitting by date mirrors real use: a scorecard is built on past loans and applied to new ones.`));
+  add(P(`Loans are ordered by date. The earliest 70% (${S.train.n} loans, ${S.train.n_bad} defaulted, up to ${d.hist.train_end}) are the training set: every constant in the scorecard is learned from them. The latest 30% (${S.test.n} loans, ${S.test.n_bad} defaulted, from ${d.hist.test_start}) are the test set and are used only to check the result. Splitting by date mirrors real use: a scorecard is built on past loans and applied to new ones.`));
 
   // 4
   add(H('4. Data model'));
@@ -273,8 +258,7 @@ function build(d) {
     add(table(['Metric', 'Value', 'Band points', 'Points after short-history adjustment', 'Weight', 'Adds to score'], ex.points.map((p) => [
       METRIC[p.metric], valueText(p.metric, p.raw_value), Number(p.band_points).toFixed(1), Number(p.points).toFixed(1), pct(p.weight), (Number(p.weight) * Number(p.points)).toFixed(2)])));
     add(code(ex.points.map((p) => `${Number(p.weight).toFixed(3)}×${Number(p.points).toFixed(1)}`).join(' + ') + ` = ${Number(s.score).toFixed(2)}`));
-    const out = { A: 'finished and fully paid', B: 'finished but not paid', C: 'still running and paid on time', D: 'still running and in debt' }[s.status];
-    add(P(`Decision: ${s.approved ? 'approve' : 'reject'}. What really happened: status ${s.status} — ${out}.`));
+    add(P(`Decision: ${s.approved ? 'approve' : 'reject'}. What really happened: status ${s.status} — ${STATUS[s.status].toLowerCase()}.`));
   }
 
   // 10
@@ -320,8 +304,7 @@ async function main() {
   const body = build(d);
   const missing = REQUIRED.filter((h) => !headings.includes(h));
   if (missing.length) throw new Error(`missing sections: ${missing.join(', ')}`);
-  const bad = allText.filter((s) => /undefined|NaN|\[object/.test(s));
-  if (bad.length) throw new Error(`bad text: ${bad.slice(0, 3).join(' | ')}`);
+  checkText(allText);
   const doc = new Document({
     features: { updateFields: true },
     styles: { default: { document: { run: { font: 'Calibri', size: 22 } } } },

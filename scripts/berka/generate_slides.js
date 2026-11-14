@@ -1,16 +1,13 @@
 // Generate docs/Final_Presentation.pptx (previous-version context + new-version evidence in one deck) from the live
 // scorecard tables, in the visual style of the previous deck
 // (archive/previous_version/presentations/Previous_Presentation.pptx). Needs capture_charts.js images in docs/img/charts.
-// Usage: node scripts/berka/generate_slides.js
+// Usage: node scripts/berka/generate_slides.js [output.pptx]
 const fs = require('fs');
 const path = require('path');
 const PptxGenJS = require('pptxgenjs');
-const { METRIC, CRIT, VERDICT, pct, f2, int, load, bandText, valueText } = require('./lib/report_data');
+const { ROOT, DASHBOARD_URL, METRIC, CRIT, VERDICT, STATUS, pct, f2, int, chart, checkText, load, pairText, bandText, valueText } = require('./lib/report_data');
 
-const ROOT = path.join(__dirname, '..', '..');
-const IMG = path.join(ROOT, 'docs', 'img', 'charts');
-const OUT = path.join(ROOT, 'docs', 'Final_Presentation.pptx');
-const DASHBOARD_URL = 'https://da-assignment.iamrithy.com/';
+const OUT = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, 'docs', 'Final_Presentation.pptx');
 
 // v2 style
 const NAVY = '1F3864', BLUE = '4472C4', PANEL = 'EEF2F9', INK = '404040', MUTED = '7F7F7F', CODEBG = 'F2F2F2';
@@ -63,20 +60,12 @@ const DETAIL = {
     'Two people behind one account can mean a second income. None of the joint-account training loans defaulted.',
     'The account has a second user (disposition type DISPONENT)'],
 };
-const CRIT_ORDER = ['payment', 'income', 'balance', 'relationship', 'demographics'];
-const STATUS = { A: 'finished, fully paid', B: 'finished, not paid', C: 'running, paying on time', D: 'running, behind on payments' };
 
-function pngSize(file) {
-  const b = fs.readFileSync(file);
-  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
-}
 function image(slide, file, x, y, w, h) {
-  const fp = path.join(IMG, file);
-  if (!fs.existsSync(fp)) throw new Error(`missing image ${fp} — run capture_charts.js`);
-  const s = pngSize(fp);
-  const scale = Math.min(w / s.w, h / s.h);
-  const iw = s.w * scale, ih = s.h * scale;
-  slide.addImage({ path: fp, x: x + (w - iw) / 2, y: y + (h - ih) / 2, w: iw, h: ih });
+  const c = chart(file);
+  const scale = Math.min(w / c.w, h / c.h);
+  const iw = c.w * scale, ih = c.h * scale;
+  slide.addImage({ path: c.path, x: x + (w - iw) / 2, y: y + (h - ih) / 2, w: iw, h: ih });
 }
 
 function content(section, title) {
@@ -124,14 +113,10 @@ const chipColor = (p) => (p >= 99.5 ? GREEN : p >= 60 ? '7CB342' : p >= 40 ? 'F9
 async function main() {
   const d = await load();
   const P = d.param;
-  const S = Object.fromEntries(d.summary.map((r) => [r.split, r]));
-  const ev = Object.fromEntries(d.evidence.map((e) => [e.metric, e]));
-  const kept = d.evidence.filter((e) => e.verdict === 'kept');
-  const nBad = d.status.filter((s) => s.status === 'B' || s.status === 'D').reduce((a, s) => a + Number(s.n), 0);
-  const hist = Object.fromEntries(d.history.map((h) => [h.history_bucket, h]));
+  const { S, ev, kept, nBad, histBy: hist } = d;
   const W_ = Object.fromEntries(d.weights.map((w) => [w.metric, Number(w.weight)]));
   const CW = Object.fromEntries(d.critw.map((c) => [c.criterion, Number(c.weight)]));
-  const corr = (a, b) => { const c = d.corr.find((r) => (r.metric_a === a && r.metric_b === b) || (r.metric_a === b && r.metric_b === a)); return c ? Number(c.spearman).toFixed(2) : '< 0.5'; };
+  const corr = (a, b) => pairText(d, a, b);
   const twinOf = (m) => d.corr.filter((c) => c.metric_a === m || c.metric_b === m)
     .map((c) => ({ m: c.metric_a === m ? c.metric_b : c.metric_a, r: Number(c.spearman) }))
     .filter((c) => ev[c.m] && ev[c.m].verdict === 'kept').sort((a, b) => Math.abs(b.r) - Math.abs(a.r))[0];
@@ -274,11 +259,11 @@ async function main() {
     tiles.forEach(([b, sm], i) => tile(s, 0.6 + (i % 3) * 2.75, 1.55 + Math.floor(i / 3) * 1.6, 2.6, 1.45, b, sm));
     table(s, ['Status', 'Meaning', 'Loans', ''], d.status.map((r) => [r.status,
       { A: 'Finished, paid', B: 'Finished, not paid', C: 'Running, on time', D: 'Running, behind' }[r.status], int(r.n),
-      { text: r.status === 'B' || r.status === 'D' ? 'Defaulted' : 'Repaid / on time', color: r.status === 'B' || r.status === 'D' ? RED : GREEN, bold: true }]),
+      { text: r.is_bad ? 'Defaulted' : 'Repaid / on time', color: r.is_bad ? RED : GREEN, bold: true }]),
     8.95, 1.55, 3.75, [0.6, 1.35, 0.6, 1.2], { size: 12, rowH: 0.45 });
     panel(s, 0.6, 4.85, 12.1, 1.05, BLUE, null, [
-      `Train: earliest ${d.hist.ntr} loans (${d.hist.btr} defaulted) — every number in the scorecard is learned here`,
-      `Test: latest ${d.hist.nte} loans (${d.hist.bte} defaulted) — kept back, used only to check the result`,
+      `Train: earliest ${S.train.n} loans (${S.train.n_bad} defaulted) — every number in the scorecard is learned here`,
+      `Test: latest ${S.test.n} loans (${S.test.n_bad} defaulted) — kept back, used only to check the result`,
     ], { size: 15 });
     note(s, 'Some accounts were opened less than 12 months before the loan, so they have a shorter history — handled on slide ' + slideNo('history') + '.');
     s.addNotes(tx('Six years of transactions. Each loan is scored on the 12 months before it started. Many accounts were younger than a year when the loan started, which is why short history needs special handling. We split by date: learn on older loans, test on newer ones, like a bank would.'));
@@ -374,7 +359,7 @@ async function main() {
   builders.candidates = () => {
     const s = content('3 · Criteria & metrics', '5 criteria, 14 candidate metrics');
     const rows = [];
-    for (const c of CRIT_ORDER) {
+    for (const c of Object.keys(CRIT)) {
       d.evidence.filter((e) => e.criterion === c).forEach((e, i) => rows.push([
         i === 0 ? { text: CRIT[c], bold: true, color: NAVY } : '',
         { text: METRIC[e.metric], bold: e.verdict === 'kept' }, MEANING[e.metric],
@@ -609,10 +594,10 @@ async function main() {
     s.addShape(pptx.ShapeType.roundRect, { x: 9.9, y: 1.9, w: 2.8, h: 1.4, fill: { color: GREEN }, line: { color: GREEN }, rectRadius: 0.08 });
     s.addText([{ text: tx(`${Number(sa.score).toFixed(1)} · Grade ${sa.grade}`), options: { fontSize: 22, bold: true, breakLine: true } }, { text: tx(sa.approved ? 'Approve' : 'Reject'), options: { fontSize: 16 } }],
       { x: 9.9, y: 1.9, w: 2.8, h: 1.4, fontFace: FONT, color: 'FFFFFF', align: 'center', valign: 'middle' });
-    s.addText(tx(`Really: status ${sa.status} — ${STATUS[sa.status]}`), { x: 9.9, y: 3.4, w: 2.8, h: 0.6, fontFace: FONT, fontSize: 13, color: INK, align: 'center' });
+    s.addText(tx(`Really: status ${sa.status} — ${STATUS[sa.status].toLowerCase()}`), { x: 9.9, y: 3.4, w: 2.8, h: 0.6, fontFace: FONT, fontSize: 13, color: INK, align: 'center' });
     const se = e.score;
     panel(s, 0.6, 5.0, 12.1, 1.6, RED, `Opposite end — loan ${se.loan_id}: score ${Number(se.score).toFixed(1)}, grade ${se.grade}, ${se.approved ? 'approve' : 'reject'}`, [
-      `${e.points.filter((p) => Number(p.band_points) === 0).map((p) => METRIC[p.metric]).join(', ')} all in the riskiest band. Really: status ${se.status} — ${STATUS[se.status]}.`,
+      `${e.points.filter((p) => Number(p.band_points) === 0).map((p) => METRIC[p.metric]).join(', ')} all in the riskiest band. Really: status ${se.status} — ${STATUS[se.status].toLowerCase()}.`,
     ], { size: 14 });
     s.addNotes(tx('Walk through the top loan: each metric value, its points, its weight, and the sum. Then the lowest-scored loan, which really did default.'));
   };
@@ -699,10 +684,7 @@ async function main() {
   };
 
   for (const k of order) builders[k]();
-  const bad = texts.filter((s) => /undefined|NaN|\[object|null/.test(s));
-  if (bad.length) throw new Error(`bad text: ${bad.slice(0, 3).join(' | ')}`);
-  const stale = texts.filter((s) => /bad rate|went bad|5\.5|300–850/i.test(s));
-  if (stale.length) throw new Error(`old wording: ${stale.slice(0, 3).join(' | ')}`);
+  checkText(texts, /bad rate|went bad|5\.5|300–850/i);
   const buf = await linkButton(await pptx.write({ outputType: 'nodebuffer' }), slideNo('dashboard'));
   fs.writeFileSync(OUT, buf);
   console.log(`saved ${path.relative(ROOT, OUT)} — ${order.length} slides`);

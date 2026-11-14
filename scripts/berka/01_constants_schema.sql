@@ -6,7 +6,7 @@
 DROP TABLE IF EXISTS berka.metric_evidence, berka.metric_correlation, berka.scorecard_band,
     berka.scorecard_weight, berka.criterion_weight, berka.scorecard_param CASCADE;
 
-CREATE TABLE IF NOT EXISTS berka.metric_evidence (      -- why each candidate metric was kept or dropped
+CREATE TABLE berka.metric_evidence (      -- why each candidate metric was kept or dropped
     metric      TEXT PRIMARY KEY,
     criterion   TEXT NOT NULL,
     gini_train  NUMERIC(6,3),     -- + = higher value riskier, - = higher value safer
@@ -18,11 +18,11 @@ CREATE TABLE IF NOT EXISTS berka.metric_evidence (      -- why each candidate me
     verdict     TEXT NOT NULL,    -- kept | dropped_weak | dropped_duplicate | dropped_no_added_value
     reason      TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS berka.metric_correlation (   -- Spearman rank correlation between candidates (train)
+CREATE TABLE berka.metric_correlation (   -- Spearman rank correlation between candidates (train)
     metric_a TEXT, metric_b TEXT, spearman NUMERIC(6,3),
     PRIMARY KEY (metric_a, metric_b)
 );
-CREATE TABLE IF NOT EXISTS berka.scorecard_band (       -- value range -> points for each kept metric
+CREATE TABLE berka.scorecard_band (       -- value range -> points for each kept metric
     metric   TEXT, band INT,
     lower    NUMERIC,             -- exclusive; NULL = no lower limit
     upper    NUMERIC,             -- inclusive; NULL = no upper limit
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS berka.scorecard_band (       -- value range -> points
     n_train  INT,
     PRIMARY KEY (metric, band)
 );
-CREATE TABLE IF NOT EXISTS berka.scorecard_weight (     -- weight of each kept metric in the 0-100 score
+CREATE TABLE berka.scorecard_weight (     -- weight of each kept metric in the 0-100 score
     metric        TEXT PRIMARY KEY,
     criterion     TEXT NOT NULL,
     coef          NUMERIC       ,   -- logistic-regression coefficient on points/100 (negative = lowers risk)
@@ -39,11 +39,11 @@ CREATE TABLE IF NOT EXISTS berka.scorecard_weight (     -- weight of each kept m
     null_band     INT NOT NULL,   -- band used when the value is missing (the riskier end)
     window_metric BOOLEAN NOT NULL -- true = measured over the 12-month window, so shrunk for short history
 );
-CREATE TABLE IF NOT EXISTS berka.criterion_weight (
+CREATE TABLE berka.criterion_weight (
     criterion TEXT PRIMARY KEY,
     weight    NUMERIC               -- sum of its metrics' weights (0 if every metric was dropped)
 );
-CREATE TABLE IF NOT EXISTS berka.scorecard_param (
+CREATE TABLE berka.scorecard_param (
     name  TEXT PRIMARY KEY,
     value NUMERIC
 );

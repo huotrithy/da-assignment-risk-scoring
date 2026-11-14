@@ -1,6 +1,12 @@
-// Shared by generate_report.js and generate_slides.js: labels, number formats and every number
+// Shared by generate_report.js and generate_slides.js: labels, number formats, paths, and every number
 // the report and slides quote, read live from the berka scorecard tables.
+const fs = require('fs');
+const path = require('path');
 const { connect } = require('./db');
+
+const ROOT = path.join(__dirname, '..', '..', '..');
+const IMG = path.join(ROOT, 'docs', 'img', 'charts');
+const DASHBOARD_URL = 'https://da-assignment.iamrithy.com/';
 
 const METRIC = {
   penalty_events: 'Penalty-interest charges', negative_balance_events: 'Overdraft (negative-balance) events',
@@ -11,10 +17,26 @@ const METRIC = {
 };
 const CRIT = { payment: 'Payment behaviour', income: 'Income & capacity', balance: 'Balance behaviour', relationship: 'Account relationship', demographics: 'Demographics' };
 const VERDICT = { kept: 'Kept', dropped_weak: 'Dropped — weak', dropped_duplicate: 'Dropped — duplicate', dropped_no_added_value: 'Dropped — no added value' };
+// Loan status meanings (B and D count as defaulted: berka.loan.is_bad).
+const STATUS = { A: 'Finished, fully paid', B: 'Finished, not paid', C: 'Running, paid on time so far', D: 'Running, behind on payments' };
 
 const pct = (v, d = 1) => (v === null || v === undefined ? '—' : `${(100 * Number(v)).toFixed(d)}%`);
 const f2 = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(2));
-const int = (v) => Number(v).toLocaleString('en-US');
+const int = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US'));
+
+// A chart PNG from docs/img/charts with its pixel size; fails early if capture_charts.js has not run.
+function chart(file) {
+  const fp = path.join(IMG, file);
+  if (!fs.existsSync(fp)) throw new Error(`missing image ${fp} — run capture_charts.js`);
+  const data = fs.readFileSync(fp);
+  return { path: fp, data, w: data.readUInt32BE(16), h: data.readUInt32BE(20) };
+}
+
+// Throws if any generated text contains a missing value (or a pattern the caller bans).
+function checkText(texts, banned) {
+  const bad = texts.filter((s) => /undefined|NaN|\[object|\bnull\b/.test(s) || (banned && banned.test(s)));
+  if (bad.length) throw new Error(`bad text: ${bad.slice(0, 3).join(' | ')}`);
+}
 
 async function load() {
   const db = await connect();
@@ -22,16 +44,15 @@ async function load() {
   try {
     const d = {
       counts: (await q(`SELECT (SELECT COUNT(*) FROM berka.account) accounts, (SELECT COUNT(*) FROM berka.client) clients,
-                 (SELECT COUNT(*) FROM berka.trans) trans, (SELECT COUNT(*) FROM berka.loan) loans,
+                 t.trans, (SELECT COUNT(*) FROM berka.loan) loans,
                  (SELECT COUNT(*) FROM berka.card) cards, (SELECT COUNT(*) FROM berka.district) districts,
                  (SELECT COUNT(*) FROM berka.disposition) dispositions, (SELECT COUNT(*) FROM berka.standing_order) orders,
-                 (SELECT MIN(trans_date)::text FROM berka.trans) tmin, (SELECT MAX(trans_date)::text FROM berka.trans) tmax,
-                 (SELECT MIN(loan_date)::text FROM berka.loan) lmin, (SELECT MAX(loan_date)::text FROM berka.loan) lmax`))[0],
-      status: await q(`SELECT status, COUNT(*) n FROM berka.loan GROUP BY 1 ORDER BY 1`),
+                 t.tmin, t.tmax,
+                 (SELECT MIN(loan_date)::text FROM berka.loan) lmin, (SELECT MAX(loan_date)::text FROM berka.loan) lmax
+               FROM (SELECT COUNT(*) trans, MIN(trans_date)::text tmin, MAX(trans_date)::text tmax FROM berka.trans) t`))[0],
+      status: await q(`SELECT status, BOOL_OR(is_bad) AS is_bad, COUNT(*) n FROM berka.loan GROUP BY 1 ORDER BY 1`),
       hist: (await q(`SELECT MIN(history_months) mn, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY history_months) med, MAX(history_months) mx,
                        MIN(months_observed) omn, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY months_observed) omed,
-                       COUNT(*) FILTER (WHERE split='train') ntr, COUNT(*) FILTER (WHERE split='train' AND is_bad) btr,
-                       COUNT(*) FILTER (WHERE split='test') nte, COUNT(*) FILTER (WHERE split='test' AND is_bad) bte,
                        MAX(loan_date) FILTER (WHERE split='train')::text train_end, MIN(loan_date) FILTER (WHERE split='test')::text test_start,
                        ROUND(AVG(amount)) avg_amount, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_months) med_dur
                      FROM berka.loan_features`))[0],
@@ -58,10 +79,22 @@ async function load() {
         points: await q(`SELECT p.*, w.weight FROM berka.loan_metric_points p JOIN berka.scorecard_weight w USING (metric) WHERE loan_id = ${id} ORDER BY w.weight DESC`),
       });
     }
+    // Lookups both generators use.
+    d.S = Object.fromEntries(d.summary.map((r) => [r.split, r]));                 // validation by split
+    d.ev = Object.fromEntries(d.evidence.map((e) => [e.metric, e]));              // evidence by metric
+    d.kept = d.evidence.filter((e) => e.verdict === 'kept');
+    d.nBad = d.status.filter((s) => s.is_bad).reduce((a, s) => a + Number(s.n), 0);
+    d.histBy = Object.fromEntries(d.history.map((h) => [h.history_bucket, h]));   // validation by history bucket
     return d;
   } finally {
     await db.end();
   }
+}
+
+// Rank correlation of two metrics as text ('< 0.5' when below the stored threshold).
+function pairText(d, a, b) {
+  const c = d.corr.find((r) => (r.metric_a === a && r.metric_b === b) || (r.metric_a === b && r.metric_b === a));
+  return c ? Number(c.spearman).toFixed(2) : '< 0.5';
 }
 
 function bandText(b) {
@@ -79,5 +112,4 @@ function valueText(metric, v) {
   return Number.isInteger(n) || Math.abs(n) >= 10 ? n.toFixed(0) : n.toFixed(2);
 }
 
-
-module.exports = { METRIC, CRIT, VERDICT, pct, f2, int, load, bandText, valueText };
+module.exports = { ROOT, IMG, DASHBOARD_URL, METRIC, CRIT, VERDICT, STATUS, pct, f2, int, chart, checkText, load, pairText, bandText, valueText };

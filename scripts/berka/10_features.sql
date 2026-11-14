@@ -53,23 +53,24 @@ bal AS (
 base AS (
     SELECT l.loan_id, l.account_id, l.loan_date, l.is_bad, l.status,
            l.amount, l.duration_months, l.monthly_payment,
+           -- months elapsed in the window: from the later of account opening / 365 days before, to the loan date
+           (l.loan_date - GREATEST(ac.open_date, l.loan_date - 365)) / 30.44::numeric AS months_elapsed,
            ROW_NUMBER() OVER (ORDER BY l.loan_date, l.loan_id) AS rn,
            COUNT(*) OVER ()                                    AS n_all
-    FROM berka.loan l
+    FROM berka.loan l JOIN berka.account ac USING (account_id)
 )
 SELECT
     b.loan_id, b.account_id, b.loan_date, b.is_bad, b.status,
     CASE WHEN b.rn <= FLOOR(0.7 * b.n_all) THEN 'train' ELSE 'test' END       AS split,
     a.first_trans_date, a.last_trans_date,
-    -- months elapsed in the window: from the later of account opening / 365 days before, to the loan date
-    ROUND((b.loan_date - GREATEST(acc.open_date, b.loan_date - 365)) / 30.44::numeric, 2) AS months_observed,
+    ROUND(b.months_elapsed, 2)                                                  AS months_observed,
     ROUND((b.loan_date - acc.open_date) / 30.44::numeric, 1)                  AS history_months,
     a.penalty_events::int                                                       AS penalty_events,
     a.negative_balance_events::int                                              AS negative_balance_events,
-    ROUND(COALESCE(a.total_credit, 0) / ((b.loan_date - GREATEST(acc.open_date, b.loan_date - 365)) / 30.44::numeric), 2)      AS monthly_inflow,
+    ROUND(COALESCE(a.total_credit, 0) / b.months_elapsed, 2)      AS monthly_inflow,
     a.income_sources::int                                                       AS income_sources,
     CASE WHEN COALESCE(a.total_credit, 0) > 0
-         THEN ROUND(b.monthly_payment / (a.total_credit / ((b.loan_date - GREATEST(acc.open_date, b.loan_date - 365)) / 30.44::numeric)), 4) END AS dti,
+         THEN ROUND(b.monthly_payment / (a.total_credit / b.months_elapsed), 4) END AS dti,
     a.min_balance,
     CASE WHEN bl.avg_month_end_balance > 0
          THEN ROUND(COALESCE(bl.sd_month_end_balance, 0) / bl.avg_month_end_balance, 4) END AS balance_volatility,

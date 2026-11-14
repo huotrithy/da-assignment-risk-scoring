@@ -23,7 +23,7 @@ const CANDIDATES = [
   { metric: 'age_at_loan', criterion: 'demographics', window: false },
   { metric: 'district_unemployment', criterion: 'demographics', window: false },
 ];
-const CRITERIA = ['payment', 'income', 'balance', 'relationship', 'demographics'];
+const CRITERIA = [...new Set(CANDIDATES.map((c) => c.criterion))];
 const MIN_GINI = 0.10;      // below this a metric barely separates repaid from defaulted
 const MAX_CORR = 0.5;       // |Spearman| at or above this = the two metrics measure the same thing
 const SHRINK_KS = [3, 6, 12];
@@ -88,9 +88,9 @@ async function main() {
 
     // 1. Evidence per candidate
     const ev = CANDIDATES.map((c) => {
-      const x = train.map((r) => num(r[c.metric]));
+      const x = train.map((r) => r[c.metric]);
       const q = quartileBadRates(x, y);
-      return { ...c, x, gini: sc.gini(x, y), giniAll: sc.gini(rows.map((r) => num(r[c.metric])), yAll), q };
+      return { ...c, x, gini: sc.gini(x, y), giniAll: sc.gini(rows.map((r) => r[c.metric]), yAll), q };
     });
 
     // 2. Correlation between candidates (train)
@@ -147,7 +147,6 @@ async function main() {
     // 7. Store
     await db.query('BEGIN');
     await runFile(db, '01_constants_schema.sql');
-    await db.query('TRUNCATE berka.metric_evidence, berka.metric_correlation, berka.scorecard_band, berka.scorecard_weight, berka.criterion_weight, berka.scorecard_param');
     for (const e of ev)
       await db.query('INSERT INTO berka.metric_evidence VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
         [e.metric, e.criterion, r3(e.gini), r3(e.giniAll), ...e.q.map(r3), e.verdict, e.reason]);
