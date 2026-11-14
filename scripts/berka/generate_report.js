@@ -1,4 +1,4 @@
-// Generate docs/Stage3_Report.docx from the live scorecard tables (no number is typed by hand).
+// Generate docs/Final_Report.docx from the live scorecard tables (no number is typed by hand).
 // Needs: npm run scorecard (tables) and node scripts/berka/capture_charts.js (images in docs/img/stage3).
 // Usage: node scripts/berka/generate_report.js
 const fs = require('fs');
@@ -11,7 +11,7 @@ const { METRIC, CRIT, VERDICT, pct, f2, int, load, bandText, valueText } = requi
 
 const ROOT = path.join(__dirname, '..', '..');
 const IMG = path.join(ROOT, 'docs', 'img', 'stage3');
-const OUT = path.join(ROOT, 'docs', 'Stage3_Report.docx');
+const OUT = path.join(ROOT, 'docs', 'Final_Report.docx');
 const DASHBOARD_URL = 'https://da-assignment.iamrithy.com/';
 
 // ------------------------------------------------------------------ docx helpers
@@ -86,7 +86,7 @@ function build(d) {
 
   // Title
   add(new Paragraph({ spacing: { before: 2400, after: 200 }, alignment: AlignmentType.CENTER, children: [new TextRun({ text: t('Retail Credit Risk Scoring'), bold: true, size: 56 })] }));
-  add(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: t('Stage 3 Report — An Evidence-Based Scorecard on Real Bank Data'), size: 32 })] }));
+  add(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: t('Credit Risk Scoring Report — An Evidence-Based Scorecard on Real Bank Data'), size: 32 })] }));
   add(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 600 }, children: [new TextRun({ text: t('Data Analytics Assignment · November 2026'), size: 24, color: '666666' })] }));
   add(new Paragraph({ children: [new PageBreak()] }));
   add(new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: t('Contents'), bold: true, size: 32, color: '2E74B5' })] }));
@@ -95,19 +95,19 @@ function build(d) {
 
   // 1
   add(H('1. Executive summary'));
-  add(P(`This stage rebuilds the credit risk scorecard on real bank data. The Berka / PKDD'99 dataset holds ${int(d.counts.accounts)} accounts, ${int(d.counts.trans)} transactions and ${int(d.counts.loans)} loans from one Czech bank (1993–1998), with the real outcome of every loan: ${nBad} loans (${pct(nBad / d.counts.loans)}) were not repaid.`));
+  add(P(`This version rebuilds the credit risk scorecard on real bank data. The Berka / PKDD'99 dataset holds ${int(d.counts.accounts)} accounts, ${int(d.counts.trans)} transactions and ${int(d.counts.loans)} loans from one Czech bank (1993–1998), with the real outcome of every loan: ${nBad} loans (${pct(nBad / d.counts.loans)}) were not repaid.`));
   add(P('Because the outcome is known, every part of the scorecard is now decided by data rather than judgement:'));
   add(bullet(B('Metrics: '), `${d.evidence.length} candidate metrics were tested; ${kept.length} were kept. ${listOf(weak)} were dropped because they did not separate repaid from defaulted loans; ${listOf(dups)} were dropped because they duplicated a stronger metric.`));
   add(bullet(B('Weights: '), 'learned by logistic regression, for each metric and therefore for each criterion.'));
   add(bullet(B('Points: '), "set from each band's real default rate."));
-  add(bullet(B('Score: '), '0 to 100. The Stage 2 scaling to 300–850 is removed.'));
+  add(bullet(B('Score: '), '0 to 100. The 300–850 scaling used in the previous version is removed.'));
   add(bullet(B('Cut-offs: '), `a loan is approved only in score ranges where the real default rate is below the average. On the test loans, ${pct(S.test.approval_rate, 0)} would be approved; ${pct(S.test.bad_rate_approved)} of approved loans defaulted, against ${pct(S.test.bad_rate_rejected)} of rejected loans (all loans: ${pct(d.overall.appr, 0)} approved, ${pct(d.overall.bad_appr)} vs ${pct(d.overall.bad_rej)}).`));
   add(P(`The scorecard was learned on the earliest ${int(S.train.n)} loans and checked on the latest ${int(S.test.n)}, which it never saw. It separates repaid from defaulted loans with a Gini of ${f2(S.train.gini)} on the training loans and ${f2(S.test.gini)} on the test loans, and the default rate rises steadily from grade A to grade E. The test set contains only ${S.test.n_bad} defaulted loans, so the test figures show a direction rather than a precise rate.`));
 
   // 2
-  add(H('2. What changed since Stage 2'));
-  add(P('Stage 2 scored synthetic customers produced by a data generator. The generator created each customer\'s behaviour from a risk level chosen in advance, so the data could not show whether a metric really predicts default: any check would only find the rules the generator was given. Stage 3 moves to real data with known outcomes so that each choice can be tested.'));
-  add(table(['Item', 'Stage 2', 'Stage 3'], [
+  add(H('2. What changed since the previous version'));
+  add(P('The previous version scored synthetic customers produced by a data generator. The generator created each customer\'s behaviour from a risk level chosen in advance, so the data could not show whether a metric really predicts default: any check would only find the rules the generator was given. The new version moves to real data with known outcomes so that each choice can be tested.'));
+  add(table(['Item', 'Previous version', 'New version'], [
     ['Data', 'Synthetic customers from a generator', `${int(d.counts.loans)} real loans with known outcomes`],
     ['Metrics', '12, chosen by judgement', `${d.evidence.length} candidates tested, ${kept.length} kept by evidence`],
     ['Weights', '35 / 25 / 20 / 10 / 10, by judgement', 'Learned by logistic regression'],
@@ -218,27 +218,27 @@ function build(d) {
   add(figure('correlation.png', 'Figure 3. Rank correlation between candidate metrics (training loans). Values shown where |r| ≥ 0.5.', 560));
 
   // 7
-  add(H('7. Questions raised at the Stage 2 review'));
+  add(H('7. Questions raised at the previous review'));
   add(H2('7.1 Why these metrics, and what supports them?'));
-  add(P(`In Stage 2 the metrics came from judgement. In Stage 3 each one is tested against real loan outcomes (section 6). ${kept.length} of ${d.evidence.length} candidates passed. The strongest is balance volatility: loans in the most volatile quarter defaulted ${pct(ev.balance_volatility.bad_rate_q4, 0)} of the time, against ${pct(ev.balance_volatility.bad_rate_q1, 0)} in the most stable quarter. Every borrower with an overdraft in the year before the loan defaulted (${pct(ev.negative_balance_events.bad_rate_q2, 0)}), against ${pct(ev.negative_balance_events.bad_rate_q1, 0)} of the rest. Several Stage 2 assumptions did not hold: age (Gini ${f2(ev.age_at_loan.gini_train)}), region and the spending ratio carry almost no signal, and were dropped.`));
+  add(P(`In the previous version the metrics came from judgement. In the new version each one is tested against real loan outcomes (section 6). ${kept.length} of ${d.evidence.length} candidates passed. The strongest is balance volatility: loans in the most volatile quarter defaulted ${pct(ev.balance_volatility.bad_rate_q4, 0)} of the time, against ${pct(ev.balance_volatility.bad_rate_q1, 0)} in the most stable quarter. Every borrower with an overdraft in the year before the loan defaulted (${pct(ev.negative_balance_events.bad_rate_q2, 0)}), against ${pct(ev.negative_balance_events.bad_rate_q1, 0)} of the rest. Several assumptions of the previous version did not hold: age (Gini ${f2(ev.age_at_loan.gini_train)}), region and the spending ratio carry almost no signal, and were dropped.`));
   add(H2('7.2 Why these weights?'));
-  add(P('The Stage 2 weights (35 / 25 / 20 / 10 / 10) were set by judgement. The Stage 3 weights come from a logistic regression on the training loans: a metric that moves the prediction of a default more gets a larger share of the score. The order of the criteria is close to the Stage 2 judgement — payment behaviour first — but each number is now measured rather than chosen.'));
+  add(P('The weights of the previous version (35 / 25 / 20 / 10 / 10) were set by judgement. The new weights come from a logistic regression on the training loans: a metric that moves the prediction of a default more gets a larger share of the score. The order of the criteria is close to the judgement of the previous version — payment behaviour first — but each number is now measured rather than chosen.'));
   add(table(['Metric', 'Criterion', 'Weight'], d.weights.map((w) => [METRIC[w.metric], CRIT[w.criterion], pct(w.weight)])));
   add(gap());
   add(table(['Criterion', 'Weight'], d.critw.map((c) => [CRIT[c.criterion], pct(c.weight)])));
   add(gap());
   add(figure('weights.png', 'Figure 4. Weight of each kept metric in the score.', 520));
   add(H2('7.3 Why multiply by 5.5 and add 300?'));
-  add(P('That step only moved the score onto the familiar 300–850 range of commercial credit scores; it added no information and raised questions about the constants. Stage 3 removes it. The score is the weighted sum of points, from 0 to 100, and the grade cut-offs are set directly on that scale.'));
+  add(P('That step only moved the score onto the familiar 300–850 range of commercial credit scores; it added no information and raised questions about the constants. The new version removes it. The score is the weighted sum of points, from 0 to 100, and the grade cut-offs are set directly on that scale.'));
   add(H2('7.4 Are on-time and delinquency metrics biased for customers with little history?'));
-  add(P(`Yes — a customer with one month of clean history looked as good as one with years of it. Stage 3 handles this in two ways. First, money-based metrics are averaged over the months actually observed, and the payment metric is scored as "any overdraft in the window" rather than as a share of instalments, so a short record cannot look perfect by having few instalments. Second, points are pulled toward the average when few months were observed (section 5.6). The result: customers whose account was less than six months old were approved ${pct(hist['<6'].approval_rate)} of the time, against ${pct(hist['12+'].approval_rate)} for accounts of a year or more, and their real default rate (${pct(hist['<6'].bad_rate)}) was indeed higher (${pct(hist['12+'].bad_rate)} for a year or more). Short history is not rewarded.`));
+  add(P(`Yes — a customer with one month of clean history looked as good as one with years of it. The new version handles this in two ways. First, money-based metrics are averaged over the months actually observed, and the payment metric is scored as "any overdraft in the window" rather than as a share of instalments, so a short record cannot look perfect by having few instalments. Second, points are pulled toward the average when few months were observed (section 5.6). The result: customers whose account was less than six months old were approved ${pct(hist['<6'].approval_rate)} of the time, against ${pct(hist['12+'].approval_rate)} for accounts of a year or more, and their real default rate (${pct(hist['<6'].bad_rate)}) was indeed higher (${pct(hist['12+'].bad_rate)} for a year or more). Short history is not rewarded.`));
   add(table(['Account age at loan', 'Loans', 'Real default rate', 'Average score', 'Approved'], d.history.map((h) => [
     `${h.history_bucket} months`, h.n, pct(h.bad_rate), Number(h.avg_score).toFixed(1), pct(h.approval_rate)])));
   add(gap());
   add(H2('7.5 Do some metrics count the same thing twice?'));
-  add(P(`Yes. The concern raised — spend-to-income and balance trend — is confirmed by the data: their rank correlation is ${pairText('spend_to_income', 'balance_trend')}. Stage 3 checks every pair (Figure 3) and keeps only the stronger metric of any pair at 0.5 or above. Penalty interest and overdraft events (${pairText('penalty_events', 'negative_balance_events')}) and lowest balance and balance volatility (${pairText('min_balance', 'balance_volatility')}) were handled the same way: the weaker metric of each pair was dropped.`));
+  add(P(`Yes. The concern raised — spend-to-income and balance trend — is confirmed by the data: their rank correlation is ${pairText('spend_to_income', 'balance_trend')}. The new version checks every pair (Figure 3) and keeps only the stronger metric of any pair at 0.5 or above. Penalty interest and overdraft events (${pairText('penalty_events', 'negative_balance_events')}) and lowest balance and balance volatility (${pairText('min_balance', 'balance_volatility')}) were handled the same way: the weaker metric of each pair was dropped.`));
   add(H2('7.6 Should metrics inside a criterion have their own weights?'));
-  add(P('Yes. Stage 2 averaged the metrics inside a criterion equally. In Stage 3 each metric has its own weight from the regression, and the criterion weight is simply the sum (section 7.2). Inside Balance behaviour, for example, balance volatility carries about twice the weight of balance trend.'));
+  add(P('Yes. The previous version averaged the metrics inside a criterion equally. In the new version each metric has its own weight from the regression, and the criterion weight is simply the sum (section 7.2). Inside Balance behaviour, for example, balance volatility carries about twice the weight of balance trend.'));
   add(H2('7.7 How much data is there?'));
   add(P(`Six years of transactions (${d.counts.tmin} to ${d.counts.tmax}), ${int(d.counts.trans)} transactions over ${int(d.counts.accounts)} accounts, and ${int(d.counts.loans)} loans. Each loan is scored on the 12 months before it; accounts had ${Number(d.hist.mn).toFixed(1)} to ${Number(d.hist.mx).toFixed(1)} months of history at the loan start date (median ${Number(d.hist.med).toFixed(1)}). Section 3 gives the full breakdown.`));
 
@@ -311,8 +311,8 @@ function build(d) {
   return body;
 }
 
-const REQUIRED = ['1. Executive summary', '2. What changed since Stage 2', '3. The data', '4. Data model', '5. Method',
-  '6. Evidence for each metric', '7. Questions raised at the Stage 2 review', '8. Results', '9. Worked examples',
+const REQUIRED = ['1. Executive summary', '2. What changed since the previous version', '3. The data', '4. Data model', '5. Method',
+  '6. Evidence for each metric', '7. Questions raised at the previous review', '8. Results', '9. Worked examples',
   '10. Dashboard', '11. Limitations', 'Appendix A. Band limits and points', 'Appendix B. How to reproduce'];
 
 async function main() {
