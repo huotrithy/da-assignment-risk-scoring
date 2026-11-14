@@ -15,7 +15,7 @@ and each rule is checked on loans the scorecard has never seen.
 | Data | synthetic customers (generator) | 682 real loans, 4,500 accounts, 1,056,320 transactions |
 | Metrics | 12, chosen by judgement | 14 candidates tested; 6 kept by evidence |
 | Weights | 35/25/20/10/10, judgement | learned by logistic regression |
-| Points | 100/70/40/10 by quartile rank | from each band's real default rate (weight of evidence) |
+| Points | 100/70/40/10 by quartile rank | from each bucket's real default rate (weight of evidence) |
 | Score scale | 300–850 (×5.5 + 300) | 0–100, no scaling |
 | Cut-offs | judgement | approve only where real default rate is below average |
 | Validation | not possible (no outcome) | train/test split, Gini, default rate per grade |
@@ -47,8 +47,8 @@ Selection rules, applied on the training loans:
 1. **Strength:** Gini of the metric against the outcome. |Gini| < 0.10 → dropped as *weak*.
 2. **Duplicates:** Spearman rank correlation between metrics. |r| ≥ 0.5 → the two metrics measure
    the same behaviour; the weaker one is dropped as a *duplicate*.
-3. **Usable banding:** if the default rate cannot be made to move in one direction across at least two
-   bands, the metric is dropped.
+3. **Usable buckets:** if the default rate cannot be made to move in one direction across at least two
+   buckets, the metric is dropped.
 4. **Added value:** after the regression (section 5), a metric whose coefficient points the wrong way
    adds nothing once the others are known and is dropped.
 
@@ -73,12 +73,12 @@ Result (live values in `berka.metric_evidence`):
 
 Positive Gini = higher value is riskier; negative = higher value is safer.
 
-## 4. Bands and points
+## 4. Buckets and points
 
-For each kept metric the training values are cut at their quartiles (two bands for yes/no metrics).
-Adjacent bands are merged until the default rate moves in one direction. Each band's points come from its
+For each kept metric the training values are cut at their quartiles (two buckets for yes/no metrics).
+Adjacent buckets are merged until the default rate moves in one direction. Each bucket's points come from its
 **weight of evidence** — ln(share of repaid loans ÷ share of defaulted loans), with +0.5 smoothing — scaled so
-the safest band gets 100 and the riskiest gets 0. A missing value goes to the riskier end.
+the safest bucket gets 100 and the riskiest gets 0. A missing value goes to the riskier end.
 
 The cut points are fixed constants (`berka.scorecard_band`), so a customer's points do not depend on
 who else is scored in the same batch.

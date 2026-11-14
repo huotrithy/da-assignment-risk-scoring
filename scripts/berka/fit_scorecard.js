@@ -115,7 +115,7 @@ async function main() {
     let metrics = [];
     for (const e of kept) {
       const b = buildBands(e, e.x, y);
-      if (b.bands.length < 2) { e.verdict = 'dropped_weak'; e.reason = 'default rate not monotonic in any banding: all bands merged into one'; continue; }
+      if (b.bands.length < 2) { e.verdict = 'dropped_weak'; e.reason = 'default rate does not move in one direction: all buckets merged into one'; continue; }
       metrics.push(Object.assign(e, b));
     }
 
@@ -137,7 +137,7 @@ async function main() {
     for (const m of metrics) {
       const r = m.bands.map((b) => `${(100 * b.bad_rate).toFixed(0)}%`);
       m.verdict = 'kept';
-      m.reason = `|Gini| ${Math.abs(m.gini).toFixed(2)}; default rate ${r.join(' → ')} across its ${r.length} bands (lowest value first)`;
+      m.reason = `|Gini| ${Math.abs(m.gini).toFixed(2)}; default rate ${r.join(' → ')} across its ${r.length} buckets (lowest value first)`;
     }
 
     // 6. Grade cut-offs on train scores

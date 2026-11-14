@@ -51,11 +51,11 @@ Loan status: A = finished, paid; B = finished, not paid; C = running, on time; D
 | `loan_features` | loan | `10_features.sql` | 14 candidate metrics from the 12 months before the loan date; train/test split |
 | `metric_evidence` | candidate metric | `fit_scorecard.js` | Gini, default rate per value group, kept/dropped and why |
 | `metric_correlation` | pair of metrics | `fit_scorecard.js` | Spearman rank correlation |
-| `scorecard_band` | metric × band | `fit_scorecard.js` | value range → points, default rate, training count |
-| `scorecard_weight` | kept metric | `fit_scorecard.js` | regression coefficient, weight, missing-value band |
+| `scorecard_band` | metric × bucket | `fit_scorecard.js` | value range → points, default rate, training count |
+| `scorecard_weight` | kept metric | `fit_scorecard.js` | regression coefficient, weight, missing-value bucket |
 | `criterion_weight` | criterion | `fit_scorecard.js` | sum of its metrics' weights |
 | `scorecard_param` | setting | `fit_scorecard.js` | grade cut-offs, approve line, shrinkage k, training Gini |
-| `loan_metric_points` | loan × kept metric | `20_score.sql` | raw value, band, points |
+| `loan_metric_points` | loan × kept metric | `20_score.sql` | raw value, bucket, points |
 | `loan_score` | loan | `20_score.sql` | criterion points, score 0–100, grade, approved |
 | `validation_*` views | split / grade | `30_validate.sql` | Gini, approval, default rate by grade, robustness checks |
 

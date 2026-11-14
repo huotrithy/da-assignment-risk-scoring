@@ -7,6 +7,7 @@ const path = require('path');
 const PptxGenJS = require('pptxgenjs');
 const { ROOT, DASHBOARD_URL, METRIC, CRIT, VERDICT, STATUS, pct, f2, int, chart, checkText, load, pairText, bandText, valueText } = require('./lib/report_data');
 
+const ICONS = path.join(ROOT, 'docs', 'img', 'icons');
 const OUT = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, 'docs', 'Final_Presentation.pptx');
 
 // v2 style
@@ -108,6 +109,35 @@ function tile(s, x, y, w, h, big, small) {
   s.addText(tx(big), { x: x + 0.2, y: y + 0.1, w: w - 0.3, h: h * 0.5, fontFace: FONT, fontSize: 26, bold: true, color: NAVY, valign: 'bottom' });
   s.addText(tx(small), { x: x + 0.2, y: y + h * 0.55, w: w - 0.3, h: h * 0.42, fontFace: FONT, fontSize: 12, color: INK, valign: 'top' });
 }
+// A white line icon (docs/img/icons, from make_icons.js) on a coloured circle.
+function icon(s, name, x, y, size, color) {
+  const fp = path.join(ICONS, `${name}.png`);
+  if (!fs.existsSync(fp)) throw new Error(`missing icon ${fp} — run make_icons.js`);
+  s.addShape(pptx.ShapeType.ellipse, { x, y, w: size, h: size, fill: { color }, line: { color } });
+  const pad = size * 0.22;
+  s.addImage({ path: fp, x: x + pad, y: y + pad, w: size - 2 * pad, h: size - 2 * pad });
+}
+// Cards side by side: icon on top, a heading and one short explanation. items = [icon, heading, text, colour]
+function iconCards(s, items, x, y, w, h, opts = {}) {
+  const gap = 0.2, cw = (w - gap * (items.length - 1)) / items.length, d = opts.icon || 0.9;
+  items.forEach(([name, head, text, color], i) => {
+    const cx = x + i * (cw + gap);
+    s.addShape(pptx.ShapeType.rect, { x: cx, y, w: cw, h, fill: { color: PANEL }, line: { color: PANEL } });
+    icon(s, name, cx + (cw - d) / 2, y + 0.3, d, color || BLUE);
+    s.addText(tx(head), { x: cx + 0.2, y: y + 0.4 + d, w: cw - 0.4, h: 0.5, fontFace: FONT, fontSize: opts.head || 18, bold: true, color: NAVY, align: 'center', valign: 'middle' });
+    s.addText(tx(text), { x: cx + 0.25, y: y + 1.0 + d, w: cw - 0.5, h: h - d - 1.1, fontFace: FONT, fontSize: opts.size || 14, color: INK, align: 'center', valign: 'top' });
+  });
+}
+// A list as rows: icon on the left, a heading and one line of explanation. items = [icon, heading, text]
+function iconRows(s, items, x, y, w, rowH, color, opts = {}) {
+  const d = Math.min(0.62, rowH - 0.2);
+  items.forEach(([name, head, text], i) => {
+    const ry = y + i * rowH;
+    icon(s, name, x, ry + (rowH - d) / 2, d, color);
+    s.addText([{ text: tx(head), options: { bold: true, fontSize: opts.head || 16, color: NAVY, breakLine: true } }, { text: tx(text), options: { fontSize: opts.size || 14, color: INK } }],
+      { x: x + d + 0.2, y: ry, w: w - d - 0.2, h: rowH, fontFace: FONT, valign: 'middle' });
+  });
+}
 const chipColor = (p) => (p >= 99.5 ? GREEN : p >= 60 ? '7CB342' : p >= 40 ? 'F9A825' : p >= 10 ? ORANGE : RED);
 
 async function main() {
@@ -126,7 +156,7 @@ async function main() {
   const share = (g) => (Number(g) + 1) / 2;   // Gini -> share of (repaid, defaulted) pairs ranked correctly
   const nDisponent = Number(d.counts.dispositions) - Number(d.counts.accounts);
 
-  const order = ['title', 'problem', 'whySwitch', 'changed', 'recap', 'terms', 'berka', 'volume', 'tables', 'model', 'workflow', 'window',
+  const order = ['title', 'problem', 'whySwitch', 'changed', 'recap', 'terms', 'berka', 'volume', 'tables', 'model', 'workflow', 'window', 'method',
     'candidates', 'gini', 'strength', 'groups', 'duplicates', 'critPayment', 'critIncome', 'critBalance', 'critRelationship',
     'points', 'weights', 'score', 'history', 'results', 'example', 'gradeA', 'dashboard', 'quality', 'limits', 'end'];
   const slideNo = (k) => order.indexOf(k) + 1;
@@ -144,43 +174,31 @@ async function main() {
 
   builders.problem = () => {
     const s = content('Recap', 'Business problem & goal');
-    panel(s, 0.6, 1.55, 5.9, 4.9, RED, 'Problem', [
-      'Loans that default cost the bank money',
-      'Manual review by loan officers is slow and inconsistent — two officers can decide differently on the same customer',
-    ], { size: 17 });
-    panel(s, 6.8, 1.55, 5.9, 4.9, GREEN, 'Goal', [
-      { text: 'Score every applicant consistently', bold: true }, { text: 'A score from 0 to 100 and a risk grade A–E', sub: true },
-      { text: "Use the bank's own data only", bold: true }, { text: 'Accounts and transactions — no credit bureau', sub: true },
-      { text: 'Score in two ways', bold: true }, { text: 'When a loan application arrives, and as a batch scan of existing customers to make loan offers', sub: true },
-      { text: 'Keep it explainable', bold: true }, { text: 'Every metric, point and weight is visible, not a black box', sub: true },
-      { text: 'Prove every choice', bold: true }, { text: 'Each metric, weight and cut-off is tested on real loan outcomes', sub: true },
-    ], { size: 16 });
+    panel(s, 0.6, 1.55, 5.0, 5.0, RED, 'Problem');
+    iconRows(s, [
+      ['alert', 'Defaults cost money', 'Every loan that is not repaid is a loss for the bank'],
+      ['clock', 'Manual review is slow', 'A loan officer checks each application by hand'],
+      ['users', 'Decisions are inconsistent', 'Two officers can decide differently on the same customer'],
+    ], 0.9, 2.2, 4.5, 1.35, RED);
+    panel(s, 5.9, 1.55, 6.8, 5.0, GREEN, 'Goal');
+    iconRows(s, [
+      ['target', 'Score every applicant the same way', 'A score from 0 to 100 and a risk grade A–E'],
+      ['bank', 'Use only the data the bank already has', 'Accounts and transactions — no credit bureau'],
+      ['refresh', 'Score in two ways', 'When an application arrives, and as a batch scan to make loan offers'],
+      ['eye', 'Keep it explainable', 'Every metric, point and weight is visible'],
+      ['check', 'Prove every choice', 'Each one is tested on real loan outcomes'],
+    ], 6.2, 2.1, 6.3, 0.86, GREEN);
     s.addNotes(tx('Same business problem as the previous version. The new version adds the last goal: every choice is now backed by real loan outcomes.'));
   };
 
   builders.whySwitch = () => {
     const s = content('Recap', 'Why we switched to a new dataset');
-    const top = 1.55, h = 3.35, w = 3.9;
-    panel(s, 0.6, top, w, h, MUTED, 'Previous version data', [
-      'UCI German Credit: 1,000 real loans, each a row of coded applicant fields and a good / bad outcome',
-      'Accounts, transactions and payments for 800 customers generated with Faker',
-      "Each customer's behaviour was generated from a risk level we assigned",
-    ], { size: 13 });
-    panel(s, 0.6 + w + 0.2, top, w, h, RED, 'What was lacking', [
-      'No real transactions: testing a behaviour metric only found the rules we wrote into the generator',
-      'No real dates or history length: we could not say how many months each customer had',
-      'Metrics, weights and cut-offs could only be argued, not proven',
-    ], { size: 13 });
-    panel(s, 0.6 + 2 * (w + 0.2), top, w, h, BLUE, 'What the old data allowed', [
-      'Test the UCI fields against the real outcome: checking-account balance band, loan duration, instalment burden, years in job, age',
-      'Fit weights for those fields',
-      { text: 'But not overdrafts, balances or money in and out — most of our scorecard', bold: true },
-    ], { size: 13 });
-    panel(s, 0.6, 5.1, 12.1, 1.55, GREEN, 'Why Berka', [
-      `Real transactions with dates (${int(d.counts.trans)}) and real loan outcomes (${int(d.counts.loans)} loans) for the same accounts`,
-      'So every metric can be tested against what really happened, using only data from before the loan, and the scorecard checked on loans it never saw',
-    ], { size: 14 });
-    s.addNotes(tx('The honest gap in the previous version: the behaviour data was generated by us, so any test was circular. UCI German Credit has real outcomes, but only for a few static applicant fields. Berka has both real behaviour and real outcomes.'));
+    iconCards(s, [
+      ['database', 'Previous data', 'UCI German Credit (1,000 loans with coded applicant fields), plus accounts and transactions we generated ourselves for 800 customers', MUTED],
+      ['alert', 'What was lacking', 'The behaviour was generated from a risk level we assigned, so metrics, weights and cut-offs could only be argued, not proven', RED],
+      ['check', 'Now: a real dataset', `Berka: ${int(d.counts.trans)} real transactions and ${int(d.counts.loans)} real loans with known outcomes, so every choice can be tested`, GREEN],
+    ], 0.6, 1.6, 12.1, 4.7, { icon: 1.2, head: 22, size: 17 });
+    s.addNotes(tx('The gap in the previous version: the behaviour data was generated by us, so any test was circular. Berka has both real behaviour and real outcomes for the same accounts.'));
   };
 
   builders.changed = () => {
@@ -189,7 +207,7 @@ async function main() {
       [{ text: 'Data', bold: true }, 'UCI German Credit + generated customers', `Berka: ${int(d.counts.loans)} real loans with known outcome`],
       [{ text: 'Metrics', bold: true }, '12, chosen by judgement', `${d.evidence.length} tested, ${kept.length} kept by evidence`],
       [{ text: 'Weights', bold: true }, '35 / 25 / 20 / 10 / 10 (judgement)', 'Learned by logistic regression, per metric'],
-      [{ text: 'Points', bold: true }, '100 / 70 / 40 / 10 by rank', "From each band's real default rate"],
+      [{ text: 'Points', bold: true }, '100 / 70 / 40 / 10 by rank', "From each bucket's real default rate"],
       [{ text: 'Cut-offs', bold: true }, 'Judgement', 'Approve only where the default rate is below average'],
       [{ text: 'Proof', bold: true }, 'Not possible: no real outcome', 'Train / test split, Gini, default rate by grade'],
     ], 0.6, 1.55, 12.1, [2.0, 5.0, 5.1], { size: 15, rowH: 0.6 });
@@ -220,7 +238,7 @@ async function main() {
       [{ text: 'Overdraft', bold: true }, 'The account spends more than it holds, so the balance drops below zero (e.g. −2,000)'],
       [{ text: 'Criterion', bold: true }, 'A group of related metrics, e.g. Balance behaviour. There are 5 criteria.'],
       [{ text: 'Metric', bold: true }, 'One number measured for each loan, e.g. balance volatility'],
-      [{ text: 'Band → points', bold: true }, 'A value range of a metric gets 0–100 points; 100 = the band with the lowest default rate'],
+      [{ text: 'Bucket → points', bold: true }, 'A value range of a metric gets 0–100 points; 100 = the bucket with the lowest default rate'],
       [{ text: 'Weight', bold: true }, 'How much a metric counts in the score; learned from the data, all weights add up to 100%'],
       [{ text: 'Gini', bold: true }, `How well a metric or the score separates repaid from defaulted loans: 0 = coin flip, 1 = perfect (slide ${slideNo('gini')})`],
       [{ text: 'Train / test', bold: true }, 'The older 70% of loans build the scorecard; the newer 30% are kept back to check it'],
@@ -230,43 +248,39 @@ async function main() {
 
   builders.berka = () => {
     const s = content('1 · Data', 'The Berka dataset: a real Czech bank, 1993–1998');
-    panel(s, 0.6, 1.55, 5.9, 3.4, NAVY, 'What it is', [
-      "PKDD'99 Discovery Challenge financial data (also on Kaggle)",
-      'Real, anonymised data from one Czech bank',
-      `${int(d.counts.accounts)} accounts · ${int(d.counts.clients)} clients · ${int(d.counts.trans)} transactions`,
-      `${int(d.counts.loans)} loans, each with its real outcome`,
-      'Loaded into PostgreSQL schema "berka", Czech codes translated to English',
-    ], { size: 16 });
-    panel(s, 6.8, 1.55, 5.9, 3.4, GREEN, 'What it gives us', [
-      'Every loan has a known outcome: repaid or defaulted',
-      'So we can measure whether a metric really predicts default',
-      'And check the whole scorecard on loans it has never seen',
-      'Same idea as the previous version — account behaviour feeds a scorecard — but now provable',
-    ], { size: 16 });
+    iconCards(s, [
+      ['bank', 'Real bank data', 'Anonymised data from one Czech bank, published for the PKDD 1999 Discovery Challenge', NAVY],
+      ['table', 'Six years of activity', `${int(d.counts.accounts)} accounts and ${int(d.counts.trans)} transactions over 6 years`, BLUE],
+      ['check', 'Known loan outcomes', `${int(d.counts.loans)} loans, each marked repaid or defaulted, so every metric can be tested`, GREEN],
+    ], 0.6, 1.6, 12.1, 4.5, { icon: 1.2, head: 22, size: 17 });
+    note(s, 'Loaded into PostgreSQL schema "berka", with the Czech codes translated to English.');
     s.addNotes(tx('Berka is a well-known public bank dataset. What matters for us: real transactions and real loan outcomes.'));
   };
 
   builders.volume = () => {
     const s = content('1 · Data', 'How much data we have');
     const tiles = [
-      [`${int(d.counts.trans)}`, `transactions, ${d.counts.tmin.slice(0, 4)}–${d.counts.tmax.slice(0, 4)} (6 years)`],
-      [`${int(d.counts.accounts)}`, 'accounts'],
-      [`${int(d.counts.loans)}`, `loans, ${d.counts.lmin.slice(0, 4)}–${d.counts.lmax.slice(0, 4)}`],
-      [`${nBad} (${pct(nBad / d.counts.loans)})`, 'loans that defaulted (status B or D)'],
-      ['12 months', 'before each loan start date — the only transactions used to score it'],
-      [`${Number(d.hist.mn).toFixed(1)}–${Number(d.hist.mx).toFixed(1)}`, `months the account had been open when the loan started (half under ${Number(d.hist.med).toFixed(0)})`],
+      ['table', int(d.counts.trans), `transactions, ${d.counts.tmin.slice(0, 4)}–${d.counts.tmax.slice(0, 4)} (6 years)`, BLUE],
+      ['bank', int(d.counts.accounts), 'accounts', BLUE],
+      ['money', int(d.counts.loans), `loans, ${d.counts.lmin.slice(0, 4)}–${d.counts.lmax.slice(0, 4)}`, BLUE],
+      ['alert', `${nBad} (${pct(nBad / d.counts.loans)})`, 'loans that defaulted (status B or D)', RED],
     ];
-    tiles.forEach(([b, sm], i) => tile(s, 0.6 + (i % 3) * 2.75, 1.55 + Math.floor(i / 3) * 1.6, 2.6, 1.45, b, sm));
+    tiles.forEach(([ic, big, small, color], i) => {
+      const x = 0.6 + (i % 2) * 4.15, y = 1.55 + Math.floor(i / 2) * 1.6;
+      s.addShape(pptx.ShapeType.rect, { x, y, w: 4.0, h: 1.45, fill: { color: PANEL }, line: { color: PANEL } });
+      icon(s, ic, x + 0.25, y + 0.3, 0.85, color);
+      s.addText([{ text: tx(big), options: { fontSize: 26, bold: true, color: NAVY, breakLine: true } }, { text: tx(small), options: { fontSize: 13, color: INK } }],
+        { x: x + 1.3, y, w: 2.6, h: 1.45, fontFace: FONT, valign: 'middle' });
+    });
     table(s, ['Status', 'Meaning', 'Loans', ''], d.status.map((r) => [r.status,
       { A: 'Finished, paid', B: 'Finished, not paid', C: 'Running, on time', D: 'Running, behind' }[r.status], int(r.n),
       { text: r.is_bad ? 'Defaulted' : 'Repaid / on time', color: r.is_bad ? RED : GREEN, bold: true }]),
-    8.95, 1.55, 3.75, [0.6, 1.35, 0.6, 1.2], { size: 12, rowH: 0.45 });
-    panel(s, 0.6, 4.85, 12.1, 1.05, BLUE, null, [
-      `Train: earliest ${S.train.n} loans (${S.train.n_bad} defaulted) — every number in the scorecard is learned here`,
-      `Test: latest ${S.test.n} loans (${S.test.n_bad} defaulted) — kept back, used only to check the result`,
-    ], { size: 15 });
-    note(s, 'Some accounts were opened less than 12 months before the loan, so they have a shorter history — handled on slide ' + slideNo('history') + '.');
-    s.addNotes(tx('Six years of transactions. Each loan is scored on the 12 months before it started. Many accounts were younger than a year when the loan started, which is why short history needs special handling. We split by date: learn on older loans, test on newer ones, like a bank would.'));
+    8.95, 1.55, 3.75, [0.6, 1.35, 0.6, 1.2], { size: 12, rowH: 0.61 });
+    panel(s, 0.6, 4.9, 12.1, 1.3, BLUE, null, [
+      `Train: the earliest ${S.train.n} loans (${S.train.n_bad} defaulted) — the scorecard is learned here`,
+      `Test: the latest ${S.test.n} loans (${S.test.n_bad} defaulted) — kept back, used only to check the result`,
+    ], { size: 16 });
+    s.addNotes(tx(`Six years of transactions and ${int(d.counts.loans)} loans with a known outcome. We split the loans by date: learn on the older ones, test on the newer ones, like a bank would.`));
   };
 
   builders.tables = () => {
@@ -286,14 +300,15 @@ async function main() {
   };
 
   builders.model = () => {
-    const s = content('1 · Data', 'Data model: 8 source tables + a scorecard layer');
+    const s = content('1 · Data', 'Data model: the 8 source tables');
+    const dx = 1.4;   // centre the diagram
     const box = (x, y, w, label, sub, fill = NAVY) => {
-      s.addShape(pptx.ShapeType.rect, { x, y, w, h: 0.75, fill: { color: fill }, line: { color: fill } });
+      s.addShape(pptx.ShapeType.rect, { x: x + dx, y, w, h: 0.75, fill: { color: fill }, line: { color: fill } });
       s.addText([{ text: tx(label), options: { bold: true, fontSize: 14, color: 'FFFFFF', breakLine: true } }, { text: tx(sub), options: { fontSize: 11, color: 'DCE6F2' } }],
-        { x, y, w, h: 0.75, fontFace: FONT, align: 'center', valign: 'middle' });
+        { x: x + dx, y, w, h: 0.75, fontFace: FONT, align: 'center', valign: 'middle' });
     };
     // a line shape runs top-left -> bottom-right; flip it vertically for up-right / down-left directions
-    const line = (x1, y1, x2, y2) => s.addShape(pptx.ShapeType.line, { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1) || 0.001, h: Math.abs(y2 - y1) || 0.001, line: { color: '8C8C8C', width: 1.25 }, flipV: (x2 - x1) * (y2 - y1) < 0 });
+    const line = (x1, y1, x2, y2) => s.addShape(pptx.ShapeType.line, { x: Math.min(x1, x2) + dx, y: Math.min(y1, y2), w: Math.abs(x2 - x1) || 0.001, h: Math.abs(y2 - y1) || 0.001, line: { color: '8C8C8C', width: 1.25 }, flipV: (x2 - x1) * (y2 - y1) < 0 });
     box(0.6, 1.6, 2.0, 'district', `${d.counts.districts} regions`);
     box(3.0, 1.6, 2.0, 'client', `${int(d.counts.clients)}`);
     box(3.0, 3.0, 2.0, 'disposition', 'owner / 2nd user');
@@ -305,55 +320,69 @@ async function main() {
     line(2.6, 1.97, 3.0, 1.97); line(4.0, 2.35, 4.0, 3.0); line(5.0, 3.37, 5.4, 3.37); line(4.0, 3.75, 4.0, 4.4);
     line(7.4, 3.37, 7.9, 3.37); line(7.4, 3.2, 7.9, 1.97); line(7.4, 3.55, 7.9, 4.77);
     line(1.6, 2.35, 1.6, 5.6); line(1.6, 5.6, 6.4, 5.6); line(6.4, 5.6, 6.4, 3.75);   // district -> account (routed below)
-    s.addText(tx('district also locates each account'), { x: 1.7, y: 5.62, w: 4.6, h: 0.3, fontFace: FONT, fontSize: 11, italic: true, color: MUTED });
-    panel(s, 10.3, 1.6, 2.45, 4.0, GREEN, 'Scorecard layer', [
-      'loan_features', 'metric_evidence', 'scorecard_band', 'scorecard_weight', 'loan_score', 'validation views',
-    ], { size: 12 });
+    s.addText(tx('district also locates each account'), { x: 1.7 + dx, y: 5.62, w: 4.6, h: 0.3, fontFace: FONT, fontSize: 11, italic: true, color: MUTED });
     note(s, 'An account has at most one loan. Gender is decoded from the birth number but never used for scoring.');
-    s.addNotes(tx("Berka's own structure: clients use accounts through dispositions (owner or second user); accounts have transactions, orders and at most one loan. The green layer is everything our pipeline derives."));
+    s.addNotes(tx('Clients use accounts through dispositions (owner or second user); accounts have transactions, orders and at most one loan.'));
   };
 
   builders.workflow = () => {
     const s = content('2 · Workflow', 'End-to-end workflow');
     const steps = [
-      ['Load', 'Download, translate, load 8 tables', 'load_berka.js'],
-      ['Features', '14 metrics per loan from the 12 months before it', '10_features.sql'],
-      ['Fit', 'Select metrics, bands, points, weights, cut-offs (train)', 'fit_scorecard.js'],
-      ['Score', 'Points → score 0–100 → grade', '20_score.sql'],
-      ['Validate', 'Gini, default rate per grade, train vs test', '30_validate.sql'],
-      ['Dashboard', 'Streamlit, live from the tables', 'dashboard/app.py'],
+      ['download', 'Load', 'Download, translate and load the 8 tables', 'load_berka.js'],
+      ['bars', 'Features', `${d.evidence.length} metrics per loan from the 12 months before it`, '10_features.sql'],
+      ['scale', 'Fit', 'Learn buckets, points, weights and cut-offs on the training loans', 'fit_scorecard.js'],
+      ['calc', 'Score', 'Points → score 0–100 → grade', '20_score.sql'],
+      ['flask', 'Validate', 'Check the result on the test loans', '30_validate.sql'],
+      ['monitor', 'Dashboard', 'Streamlit, live from the tables', 'dashboard/app.py'],
     ];
-    steps.forEach(([h, sub, file], i) => {
-      const x = 0.6 + i * 2.05, last = i === steps.length - 1;
-      s.addShape(pptx.ShapeType.rect, { x, y: 1.8, w: 1.85, h: 2.6, fill: { color: last ? GREEN : i === 2 ? NAVY : '8EA9DB' }, line: { color: 'FFFFFF' } });
-      s.addText([{ text: tx(String(i + 1)), options: { fontSize: 13, breakLine: true } }, { text: tx(h), options: { fontSize: 17, bold: true, breakLine: true } }, { text: tx(sub), options: { fontSize: 12 } }],
-        { x: x + 0.1, y: 1.9, w: 1.65, h: 1.9, fontFace: FONT, color: 'FFFFFF', align: 'center', valign: 'top' });
-      s.addText(tx(file), { x: x + 0.05, y: 3.85, w: 1.75, h: 0.4, fontFace: 'Consolas', fontSize: 10, color: 'FFFFFF', align: 'center' });
+    steps.forEach(([ic, h, sub, file], i) => {
+      const x = 0.6 + i * 2.05, fill = i === steps.length - 1 ? GREEN : i === 2 ? NAVY : '8EA9DB';
+      s.addShape(pptx.ShapeType.rect, { x, y: 1.8, w: 1.85, h: 4.3, fill: { color: fill }, line: { color: 'FFFFFF' } });
+      icon(s, ic, x + 0.475, 2.1, 0.9, fill === NAVY ? BLUE : fill === GREEN ? '1B5E20' : NAVY);
+      s.addText([{ text: tx(`${i + 1} · ${h}`), options: { fontSize: 18, bold: true, breakLine: true } }, { text: tx(sub), options: { fontSize: 13 } }],
+        { x: x + 0.1, y: 3.2, w: 1.65, h: 2.0, fontFace: FONT, color: 'FFFFFF', align: 'center', valign: 'top', paraSpaceAfter: 6 });
+      s.addText(tx(file), { x: x + 0.05, y: 5.5, w: 1.75, h: 0.4, fontFace: 'Consolas', fontSize: 10, color: 'FFFFFF', align: 'center' });
     });
-    code(s, 'npm run scorecard      # features → fit → score → validate, in one command', 0.6, 4.8, 12.1, 0.7, 15);
-    panel(s, 0.6, 5.7, 12.1, 0.95, BLUE, null, ['Every step has an automated check (no future data used, weights add up to 100%, grades ordered by risk) and the whole run is repeatable: same data in, same scorecard out.'], { size: 14 });
-    s.addNotes(tx('Same shape as the previous version, but step 3 is new: the fit learns every number in the scorecard from the training loans and stores it in the database.'));
+    s.addNotes(tx('Six steps from raw files to the dashboard. Step 3 is the core: the fit learns every number in the scorecard from the training loans and stores it in the database.'));
   };
 
   builders.window = () => {
     const s = content('2 · Workflow', 'Point in time: only what the bank knew on the loan start date');
     s.addShape(pptx.ShapeType.line, { x: 0.9, y: 2.6, w: 11.5, h: 0, line: { color: '8C8C8C', width: 2, endArrowType: 'triangle' } });
     s.addShape(pptx.ShapeType.rect, { x: 4.4, y: 2.25, w: 5.0, h: 0.7, fill: { color: BLUE }, line: { color: BLUE } });
-    s.addText(tx('12-month window — all metrics come from here'), { x: 4.4, y: 2.25, w: 5.0, h: 0.7, fontFace: FONT, fontSize: 15, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' });
+    s.addText(tx('All metrics: the 12 months before the loan'), { x: 4.4, y: 2.25, w: 5.0, h: 0.7, fontFace: FONT, fontSize: 15, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' });
     s.addShape(pptx.ShapeType.line, { x: 9.4, y: 1.9, w: 0, h: 1.4, line: { color: RED, width: 3 } });
     s.addText(tx('Loan start date'), { x: 8.5, y: 1.5, w: 1.8, h: 0.35, fontFace: FONT, fontSize: 14, bold: true, color: RED, align: 'center' });
     s.addText(tx('Account opened'), { x: 0.9, y: 2.75, w: 2.0, h: 0.35, fontFace: FONT, fontSize: 13, color: INK });
     s.addText(tx('After the loan starts: never used'), { x: 9.6, y: 2.75, w: 3.2, h: 0.35, fontFace: FONT, fontSize: 13, italic: true, color: MUTED });
-    panel(s, 0.6, 3.7, 5.9, 2.4, GREEN, 'Why it matters', [
-      'Using later data would make the score look better than it could ever be in real use',
-      'An automated check confirms no loan uses a transaction on or after its start date',
-    ], { size: 16 });
-    panel(s, 6.8, 3.7, 5.9, 2.4, ORANGE, 'Leak we caught: cards', [
-      'Most cards were issued after the loan started',
-      `Counting them made "has a card" look strong; counting only cards issued before the loan leaves ${d.card.n} card holders in training`,
-      `Result: card ownership is weak (Gini ${f2(Math.abs(ev.has_card.gini_train))}) and was dropped`,
-    ], { size: 15 });
+    iconCards(s, [
+      ['calendar', 'The year before the loan', 'Every metric is measured from the transactions of the 12 months before the loan start date', BLUE],
+      ['lock', 'Nothing after the loan starts', 'Later transactions are never used: the bank could not have seen them when deciding', RED],
+      ['check', 'A fair test', 'Using later data would make the score look better than it could ever be in real use', GREEN],
+    ], 0.6, 3.6, 12.1, 3.0, { icon: 0.8, head: 18, size: 15 });
     s.addNotes(tx('The single most important rule. Each metric looks only at the 12 months before the loan start date, exactly what the bank could see when deciding.'));
+  };
+
+  builders.method = () => {
+    const s = content('2 · Workflow', 'Our method, step by step');
+    const steps = [
+      ['bars', 'Measure', `For every loan, calculate ${d.evidence.length} candidate metrics from the 12 months before it`, 'candidates'],
+      ['search', 'Test each metric', 'Do loans with a high value default more often than loans with a low value? If not, drop the metric', 'strength'],
+      ['copy', 'Remove duplicates', 'When two metrics move together, keep only the stronger one', 'duplicates'],
+      ['layers', 'Give points', 'Split each metric into buckets. A bucket with fewer defaults gets more points (0–100)', 'points'],
+      ['scale', 'Learn weights', 'A regression finds how much each metric matters. The weights add up to 100%', 'weights'],
+      ['flask', 'Score and check', 'Score = sum of weight × points. Set the approve line, then check on loans not used so far', 'results'],
+    ];
+    steps.forEach(([ic, head, text, target], i) => {
+      const x = 0.6 + (i % 3) * 4.1, y = 1.5 + Math.floor(i / 3) * 2.65, w = 3.9, h = 2.45;
+      s.addShape(pptx.ShapeType.rect, { x, y, w, h, fill: { color: PANEL }, line: { color: PANEL } });
+      icon(s, ic, x + 0.25, y + 0.25, 0.8, i === 5 ? GREEN : BLUE);
+      s.addText(tx(`${i + 1} · ${head}`), { x: x + 1.2, y: y + 0.25, w: w - 1.3, h: 0.8, fontFace: FONT, fontSize: 19, bold: true, color: NAVY, valign: 'middle' });
+      s.addText(tx(text), { x: x + 0.25, y: y + 1.15, w: w - 0.5, h: 0.95, fontFace: FONT, fontSize: 14, color: INK, valign: 'top' });
+      s.addText(tx(`slide ${slideNo(target)}`), { x: x + w - 1.3, y: y + h - 0.35, w: 1.2, h: 0.3, fontFace: FONT, fontSize: 11, color: MUTED, align: 'right' });
+    });
+    note(s, `Steps 2–5 use only the training loans (the earliest ${S.train.n}). Step 6 checks the result on the test loans (the latest ${S.test.n}).`);
+    s.addNotes(tx('The whole method on one slide. We first analyse the data: which metrics really go with default, and which repeat each other. Only then do we give points and weights, and both come from the data. The next slides follow these six steps in order.'));
   };
 
   builders.candidates = () => {
@@ -367,12 +396,12 @@ async function main() {
       ]));
     }
     table(s, ['Criterion', 'Metric', 'What it measures (12 months before the loan)', 'Result'], rows, 0.6, 1.45, 12.1, [2.2, 3.4, 4.6, 1.9], { size: 12, rowH: 0.33 });
-    note(s, `Same 5 criteria as the previous version (transaction behaviour is now "balance behaviour"). Gender is available but was never a candidate (fairness). Why each was kept or dropped: slides ${slideNo('strength')}–${slideNo('duplicates')}.`);
-    s.addNotes(tx('Every candidate metric, grouped by criterion, with what it measures in plain words. The last column is the result of the evidence on the next slides.'));
+    note(s, `Gender is available but was never a candidate (fairness). Why each metric was kept or dropped: slides ${slideNo('gini')}–${slideNo('duplicates')}.`);
+    s.addNotes(tx('Step 1 of the method. Every candidate metric, grouped by criterion, with what it measures in plain words. The last column is the result of steps 2 and 3 on the next slides.'));
   };
 
   builders.gini = () => {
-    const s = content('3 · Criteria & metrics', 'What is Gini? How well loans are separated');
+    const s = content('4 · Evidence', 'What is Gini? How well loans are separated');
     // 10 loans each, ordered by score (low -> high); D = defaulted, R = repaid. 3 defaulted, 7 repaid per row.
     const rows = [
       ['Gini ≈ 0 · mixed (coin flip)', 'RDRRRDRRDR'],
@@ -392,40 +421,37 @@ async function main() {
     s.addText(tx('defaulted'), { x: 2.4, y: 5.93, w: 1.5, h: 0.38, fontFace: FONT, fontSize: 12, color: INK });
     panel(s, 7.6, 1.55, 5.1, 5.1, BLUE, 'How to read it', [
       'Take one repaid and one defaulted loan at random. Does the repaid loan get the higher score?',
-      'Repeat for every pair: right 50% of the time = coin flip (Gini 0); right every time = Gini 1',
-      { text: 'Gini = 2 × (share of pairs right) − 1', bold: true },
-      { text: `Our score: train ${f2(S.train.gini)} → right ${pct(share(S.train.gini), 0)} of pairs; test ${f2(S.test.gini)} → ${pct(share(S.test.gini), 0)}`, bold: true },
-      'For one metric the sign shows the direction: + higher value is riskier, − higher value is safer',
-      'Rule: a metric with |Gini| below 0.10 is dropped as weak',
-    ], { size: 14 });
-    s.addNotes(tx('Gini does not depend on where we put the approve line, so it is a fair way to compare metrics and to check the final score. It is the standard measure for credit scorecards.'));
+      'Right half of the time = coin flip (Gini 0). Right every time = Gini 1',
+      { text: `Our score is right for ${pct(share(S.train.gini), 0)} of pairs on the training loans (Gini ${f2(S.train.gini)}) and ${pct(share(S.test.gini), 0)} on the test loans (Gini ${f2(S.test.gini)})`, bold: true },
+      'A metric with a Gini below 0.10 is dropped as weak',
+    ], { size: 16 });
+    s.addNotes(tx('Gini is one number for how well a metric, or the final score, separates repaid from defaulted loans. It is the standard measure for credit scorecards. Formula: 2 × (share of pairs ranked right) − 1.'));
   };
 
   builders.strength = () => {
     const s = content('4 · Evidence', 'Which metrics really predict default?');
     image(s, 'metric_strength.png', 0.5, 1.45, 7.8, 5.2);
+    const weak = d.evidence.filter((e) => e.verdict === 'dropped_weak').map((e) => METRIC[e.metric].toLowerCase());
     panel(s, 8.6, 1.55, 4.1, 5.05, BLUE, 'How to read', [
-      'Bar = |Gini|: 0 = no better than a coin flip, 1 = perfect',
-      'Below 0.10 → dropped as weak',
+      'Longer bar = the metric separates repaid from defaulted loans better (Gini)',
       { text: `Strongest: balance volatility (${f2(ev.balance_volatility.gini_train)})`, bold: true },
-      { text: `Age ${f2(ev.age_at_loan.gini_train)}, district ${f2(ev.district_unemployment.gini_train)}, spend ÷ income ${f2(ev.spend_to_income.gini_train)} → no signal`, bold: true },
-      'Grey bars above 0.10 were dropped as duplicates (slide ' + slideNo('duplicates') + ')',
-    ], { size: 13 });
-    note(s, 'Gini on the training loans. Gender was never a candidate (fairness).');
-    s.addNotes(tx('Answers question 1. Each candidate metric is measured against real outcomes. Several assumptions of the previous version, like age closest to 42, did not hold up and were dropped.'));
+      `Below 0.10 → dropped as weak: ${weak.join(', ')}`,
+      'Grey bars above 0.10 are duplicates (slide ' + slideNo('duplicates') + ')',
+    ], { size: 15 });
+    note(s, 'Measured on the training loans. Gender was never a candidate (fairness).');
+    s.addNotes(tx('Step 2 of the method, and the answer to question 1. Each candidate metric is measured against real outcomes. Several assumptions of the previous version, like age, did not hold up and were dropped.'));
   };
 
   builders.groups = () => {
     const s = content('4 · Evidence', 'Real default rate across each metric');
     image(s, 'metric_quartiles.png', 0.5, 1.4, 9.0, 5.35);
     panel(s, 9.8, 1.55, 2.9, 5.05, BLUE, 'Read it like this', [
-      'Loans split into four equal groups (Q1–Q4) by the metric value, lowest → highest',
-      'Bar = share of loans in that group that defaulted',
-      `Balance volatility: ${pct(ev.balance_volatility.bad_rate_q1, 0)} → ${pct(ev.balance_volatility.bad_rate_q4, 0)}`,
-      `Any overdraft: ${pct(ev.negative_balance_events.bad_rate_q2, 0)} defaulted vs ${pct(ev.negative_balance_events.bad_rate_q1, 0)}`,
+      'Loans are split into four equal groups by the metric value (Q1 lowest → Q4 highest)',
+      'Bar = share of the group that defaulted',
+      { text: `Balance volatility: ${pct(ev.balance_volatility.bad_rate_q1, 0)} → ${pct(ev.balance_volatility.bad_rate_q4, 0)}`, bold: true },
       'Flat bars (age, district) = no signal',
-    ], { size: 13 });
-    s.addNotes(tx('This is the backing data for every metric: the share of loans that really defaulted, per value group. A useful metric climbs or falls steadily.'));
+    ], { size: 14 });
+    s.addNotes(tx('The same test without any formula: the share of loans that really defaulted, per value group. A useful metric climbs or falls steadily; a useless one stays flat.'));
   };
 
   builders.duplicates = () => {
@@ -438,7 +464,7 @@ async function main() {
       ...dups.map((e) => { const t = twinOf(e.metric); return `${METRIC[e.metric]} → dropped (r = ${t ? t.r.toFixed(2) : '≥ 0.5'} with ${t ? METRIC[t.m] : 'a stronger metric'})`; }),
     ], { size: 13 });
     note(s, 'r = rank correlation: 0 = unrelated, ±1 = the two metrics move exactly together.');
-    s.addNotes(tx('Answers question 4. We check every pair. When two metrics move together we keep only the stronger, so one behaviour is never scored twice.'));
+    s.addNotes(tx('Step 3 of the method, and the answer to question 4. We check every pair. When two metrics move together we keep only the stronger, so one behaviour is never scored twice.'));
   };
 
   const metricCard = (s, x, y, w, h, m) => {
@@ -453,7 +479,7 @@ async function main() {
     const body = (t, extra = {}) => ({ text: tx(t), options: { fontSize: 16, color: INK, breakLine: true, paraSpaceAfter: 12, ...extra } });
     const bands = d.bands.filter((b) => b.metric === m).map((b) => `${bandText(b)}: ${pct(b.bad_rate, 0)}`).join('   ·   ');
     s.addText([lab('QUESTION'), body(`“${q}”`, { italic: true }), lab('WHY IT SIGNALS RISK'), body(why), lab('HOW WE MEASURE IT (12 MONTHS BEFORE THE LOAN)'), body(how),
-      lab('EVIDENCE — DEFAULT RATE BY BAND (TRAINING)'), body(bands, { bold: true })],
+      lab('EVIDENCE — DEFAULT RATE BY BUCKET (TRAINING)'), body(bands, { bold: true })],
     { x: x + 0.22, y: y + 0.9, w: w - 0.35, h: h - 1.0, fontFace: FONT, valign: 'top' });
   };
   const critSlide = (c, extra) => {
@@ -493,7 +519,7 @@ async function main() {
   };
 
   builders.points = () => {
-    const s = content('5 · Scorecard', "Points: from each band's real default rate");
+    const s = content('5 · Scorecard', "Points: from each bucket's real default rate");
     const byMetric = {};
     for (const b of d.bands) (byMetric[b.metric] ??= []).push(b);
     const metrics = d.weights.map((w) => w.metric);
@@ -512,27 +538,31 @@ async function main() {
           { x, y: y + 0.05, w: cw, h: rowH - 0.18, fontFace: FONT, color: col === 'F9A825' ? NAVY : 'FFFFFF', align: 'center', valign: 'middle' });
       });
     });
-    note(s, 'Safest band = 100, riskiest = 0, from weight of evidence (share of repaid ÷ share of defaulted loans). Bands with similar risk were merged.');
-    s.addNotes(tx('Points are no longer 100/70/40/10 by rank. Each band gets points from how many of its loans really defaulted. The band limits are fixed, so a score does not depend on who else is scored.'));
+    note(s, 'Safest bucket = 100, riskiest = 0, from the share of repaid ÷ the share of defaulted loans in the bucket. Buckets with similar risk were merged.');
+    s.addNotes(tx('Step 4 of the method. Points are no longer 100/70/40/10 by rank. Each bucket gets points from how many of its loans really defaulted. The bucket limits are fixed, so a score does not depend on who else is scored.'));
   };
 
   builders.weights = () => {
     const s = content('5 · Scorecard', 'Weights learned from the data');
-    image(s, 'weights.png', 0.5, 1.45, 7.4, 3.0);
-    table(s, ['Criterion', 'Previous', 'New'], d.critw.map((c) => [CRIT[c.criterion],
-      { payment: '35%', income: '25%', balance: '20% (transaction)', relationship: '10%', demographics: '10%' }[c.criterion], { text: pct(c.weight), bold: true }]),
-    8.2, 1.55, 4.5, [2.0, 1.4, 1.1], { size: 13, rowH: 0.42 });
-    panel(s, 0.6, 4.6, 5.9, 2.05, BLUE, 'How', [
-      'Logistic regression predicts "defaulted" from each kept metric\'s points (training loans)',
-      'Weight = size of the regression coefficient, scaled to 100% — the score ranks loans exactly as the model does',
+    image(s, 'weights.png', 0.5, 1.45, 6.2, 2.95);
+    const effect = (w) => Math.abs(Number(w.coef));
+    const total = d.weights.reduce((a, w) => a + effect(w), 0);
+    table(s, ['Metric', 'Effect in the model', 'Weight = effect ÷ total'], [
+      ...d.weights.map((w) => [METRIC[w.metric], effect(w).toFixed(2), { text: pct(w.weight), bold: true }]),
+      [{ text: 'Total', bold: true }, { text: total.toFixed(2), bold: true }, { text: '100%', bold: true }],
+    ], 6.9, 1.5, 5.8, [2.9, 1.4, 1.5], { size: 12, rowH: 0.36 });
+    panel(s, 0.6, 4.6, 6.1, 2.05, BLUE, 'How a weight is found', [
+      'A logistic regression predicts "defaulted" from the points of the kept metrics (training loans)',
+      'It gives each metric an effect: how strongly its points move the prediction',
+      'Weight = effect ÷ total of all effects',
     ], { size: 13 });
-    const inCrit = (c) => d.weights.filter((w) => w.criterion === c).map((w) => `${METRIC[w.metric].toLowerCase()} ${pct(w.weight)}`).join(' vs ');
-    panel(s, 6.8, 4.6, 5.9, 2.05, GREEN, 'Not all metrics are equal', [
-      'Each metric has its own weight; a criterion\'s weight is the sum of its metrics',
-      `Balance behaviour: ${inCrit('balance')}`,
-      `Income & capacity: ${inCrit('income')}`,
+    const parts = (c) => d.weights.filter((w) => w.criterion === c).map((w) => `${METRIC[w.metric].toLowerCase()} ${pct(w.weight)}`).join(' + ');
+    panel(s, 6.9, 4.6, 5.8, 2.05, GREEN, 'A criterion = the sum of its metrics', [
+      `${CRIT.income} ${pct(CW.income)} = ${parts('income')}`,
+      `${CRIT.balance} ${pct(CW.balance)} = ${parts('balance')}`,
+      `${CRIT.payment} ${pct(CW.payment)} and ${CRIT.relationship.toLowerCase()} ${pct(CW.relationship)} have one metric each; demographics 0%`,
     ], { size: 13 });
-    s.addNotes(tx('Answers questions 2 and 5. Demographics ends at 0% because age and district did not predict default. Note the order: payment first, as in the previous version — but now measured, not chosen.'));
+    s.addNotes(tx('Step 5, and the answer to questions 2 and 5. Nobody chose these numbers: the regression measures how much each metric matters, and a criterion is just the sum of its metrics. Demographics ends at 0% because age and district did not predict default.'));
   };
 
   builders.score = () => {
@@ -560,7 +590,6 @@ async function main() {
       'Few months observed → points pulled toward the average',
       'A one-month clean record cannot reach 100',
       `k chosen from 3 / 6 / 12 by best training Gini → k = ${P.shrink_k}`,
-      'Money metrics are averaged over the months actually observed',
     ], { size: 16 });
     table(s, ['Account age at loan start', 'Loans', 'Default rate', 'Approved'], d.history.map((h) => [
       `${h.history_bucket} months`, h.n, pct(h.bad_rate), { text: pct(h.approval_rate), bold: true }]),
@@ -597,7 +626,7 @@ async function main() {
     s.addText(tx(`Really: status ${sa.status} — ${STATUS[sa.status].toLowerCase()}`), { x: 9.9, y: 3.4, w: 2.8, h: 0.6, fontFace: FONT, fontSize: 13, color: INK, align: 'center' });
     const se = e.score;
     panel(s, 0.6, 5.0, 12.1, 1.6, RED, `Opposite end — loan ${se.loan_id}: score ${Number(se.score).toFixed(1)}, grade ${se.grade}, ${se.approved ? 'approve' : 'reject'}`, [
-      `${e.points.filter((p) => Number(p.band_points) === 0).map((p) => METRIC[p.metric]).join(', ')} all in the riskiest band. Really: status ${se.status} — ${STATUS[se.status].toLowerCase()}.`,
+      `${e.points.filter((p) => Number(p.band_points) === 0).map((p) => METRIC[p.metric]).join(', ')} all in the riskiest bucket. Really: status ${se.status} — ${STATUS[se.status].toLowerCase()}.`,
     ], { size: 14 });
     s.addNotes(tx('Walk through the top loan: each metric value, its points, its weight, and the sum. Then the lowest-scored loan, which really did default.'));
   };
@@ -605,14 +634,12 @@ async function main() {
   builders.gradeA = () => {
     const s = content('6 · Results', 'What drives each grade');
     image(s, 'criteria_by_grade.png', 0.5, 1.45, 7.6, 3.4);
-    panel(s, 8.4, 1.55, 4.3, 5.05, ORANGE, 'Honest reading', [
-      'Almost no one in A–D has an overdraft, so grade A is decided mostly by joint account (two users)',
+    panel(s, 8.4, 1.55, 4.3, 5.05, ORANGE, 'How to read it', [
+      'Almost no one in A–D has an overdraft, so grade A is decided mostly by joint account',
       `None of the ${d.bands.find((b) => b.metric === 'joint_account' && b.lower !== null)?.n_train ?? ''} joint accounts in training defaulted (weight ${pct(W_.joint_account, 0)})`,
-      'The data has no date for when a second user joined, so this metric cannot be checked point in time',
-      'Balance behaviour separates C from D and E',
-      'Overdrafts mark out grade E',
-      'With more data the joint-account weight would likely shrink',
-    ], { size: 13 });
+      'Balance behaviour separates C from D and E; overdrafts mark out grade E',
+      'Caveat: the data has no date for when the second user joined. With more data this weight would likely shrink',
+    ], { size: 14 });
     panel(s, 0.6, 5.1, 7.5, 1.5, BLUE, null, ['Each cell = average criterion points (0–100) of loans in that grade. Demographics is not shown: it has no kept metric.'], { size: 13 });
     s.addNotes(tx('Pre-empt the obvious question. The data really does say joint accounts are the safest group; we state it as a limitation rather than hide it.'));
   };
@@ -631,7 +658,7 @@ async function main() {
       'Portfolio', { text: 'grades, real default rate per grade, score distribution', sub: true },
       'Evidence', { text: 'metric strength, groups, duplicates, weights, checks', sub: true },
       'Criteria by grade', { text: 'what drives each grade', sub: true },
-      'Loan drill-down', { text: 'value → band → points → weight, the 12 months before, then the real outcome', sub: true },
+      'Loan drill-down', { text: 'value → bucket → points → weight, the 12 months before, then the real outcome', sub: true },
     ], { size: 14 });
     s.addNotes(tx('Click the button to open the live dashboard. Show the Evidence tab, then the drill-down of the worked example.'));
   };
@@ -646,33 +673,33 @@ async function main() {
       ['Risk score & grade', 'Decide approve / reject — restrict access'],
     ], 0.6, 1.55, 5.9, [2.2, 3.7], { size: 13, rowH: 0.55 });
     s.addText(tx('The data is already anonymised: no names, addresses or real account numbers.'), { x: 0.6, y: 5.05, w: 5.9, h: 0.6, fontFace: FONT, fontSize: 13, italic: true, color: MUTED });
-    panel(s, 6.8, 1.55, 5.9, 5.1, ORANGE, 'Data quality issues found & handled', [
+    panel(s, 6.8, 1.55, 5.9, 4.1, ORANGE, 'Data quality issues found & handled', [
       'Czech codes (e.g. PRIJEM, SANKC. UROK) → translated to English',
       'Dates stored as YYMMDD text → converted to dates',
       'Gender hidden in the birth number (month + 50 for women) → decoded',
       'Cards issued after the loan → only earlier cards count',
-      `Short history: accounts ${Number(d.hist.mn).toFixed(1)}–${Number(d.hist.mx).toFixed(1)} months old at loan start → averaged over months seen, points pulled to average`,
-      'No date for when a second user joined → stated as a limitation',
-      'Running loans may still default → also checked on finished and older loans',
-    ], { size: 13 });
+      'Accounts with a short history → points pulled toward the average',
+    ], { size: 15 });
     s.addNotes(tx('Same headings as the previous version: what is sensitive and how we protect it, and what was wrong with the raw data and how we fixed it.'));
   };
 
   builders.limits = () => {
     const s = content('8 · Limitations', 'Limitations & next steps');
-    panel(s, 0.6, 1.55, 5.9, 3.6, ORANGE, 'Limitations', [
-      `Few defaulted loans: ${nBad} in total, ${S.test.n_bad} in the test set`,
-      'One Czech bank in the 1990s — the method transfers, the exact numbers may not',
-      'No declared income: estimated from money coming in',
-      'One loan per account: earlier repayment cannot be measured; overdraft is the closest signal',
-      'Joint account: driven by a group with no defaults, and has no date for when the second user joined',
-    ], { size: 16 });
-    panel(s, 6.8, 1.55, 5.9, 3.6, GREEN, 'Next steps', [
-      'Re-learn the scorecard on the bank\'s own, larger loan history',
-      'Add credit-bureau data for repayment at other banks',
-      'Re-check every 6–12 months; refit if the default rate per grade drifts',
-      'Grade C: consider human review before deciding',
-    ], { size: 16 });
+    panel(s, 0.6, 1.55, 5.9, 5.1, ORANGE, 'Limitations');
+    iconRows(s, [
+      ['alert', 'Few defaulted loans', `${nBad} in total, ${S.test.n_bad} in the test set`],
+      ['globe', 'One Czech bank in the 1990s', 'The method transfers; the exact numbers may not'],
+      ['money', 'No declared income', 'Estimated from money coming into the account'],
+      ['clock', 'One loan per account', 'Earlier repayment cannot be measured; overdraft is the closest signal'],
+      ['users', 'Joint account', 'A group with no defaults, and no date for when the second user joined'],
+    ], 0.9, 2.1, 5.4, 0.88, ORANGE);
+    panel(s, 6.8, 1.55, 5.9, 5.1, GREEN, 'Next steps');
+    iconRows(s, [
+      ['database', 'Use more loans', "Re-learn the scorecard on the bank's own, larger loan history"],
+      ['search', 'Add credit-bureau data', 'Shows repayment at other banks'],
+      ['refresh', 'Re-check regularly', 'Every 6–12 months; refit if the default rate per grade drifts'],
+      ['user', 'Human review for grade C', 'Borderline cases get a second look before deciding'],
+    ], 7.1, 2.1, 5.4, 1.1, GREEN);
     s.addNotes(tx('Be upfront: small number of defaults, old data from one bank. The pipeline is built so the same steps can be re-run on new data.'));
   };
 
@@ -684,7 +711,7 @@ async function main() {
   };
 
   for (const k of order) builders[k]();
-  checkText(texts, /bad rate|went bad|5\.5|300–850/i);
+  checkText(texts, /bad rate|went bad|5\.5|300–850|\bbands?\b/i);
   const buf = await linkButton(await pptx.write({ outputType: 'nodebuffer' }), slideNo('dashboard'));
   fs.writeFileSync(OUT, buf);
   console.log(`saved ${path.relative(ROOT, OUT)} — ${order.length} slides`);

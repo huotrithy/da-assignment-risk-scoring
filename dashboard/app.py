@@ -191,7 +191,7 @@ summ = data["summary"].set_index("split")
 st.title("Credit Risk Scorecard")
 st.caption(
     f"{len(scores):,} real loans (Berka Czech bank data, 1993–1998), each scored with only the 12 months of "
-    "account history before the loan start date. Weights, bands and cut-offs were learned on the earliest 70% of loans "
+    "account history before the loan start date. Weights, buckets and cut-offs were learned on the earliest 70% of loans "
     f"(train) and checked on the latest 30% (test). {DASHBOARD_NOTE}"
 )
 
@@ -426,11 +426,11 @@ def loan_drilldown():
     pts["Metric"] = pts["metric"].map(METRIC_LABEL)
     pts["Criterion"] = pts["criterion"].map(CRITERIA)
     pts["Value"] = pts.apply(lambda r: value_text(r["metric"], r["raw_value"]), axis=1)
-    pts["Band"] = pts.apply(lambda r: band_text(r["lower"], r["upper"], r["metric"]), axis=1)
+    pts["Bucket"] = pts.apply(lambda r: band_text(r["lower"], r["upper"], r["metric"]), axis=1)
     pts["Contribution"] = pts["weight"] * pts["points"]
     st.dataframe(pd.DataFrame({
-        "Metric": pts["Metric"], "Criterion": pts["Criterion"], "Value": pts["Value"], "Band": pts["Band"],
-        "Band points": pts["band_points"].round(1), "Points (after short-history adjustment)": pts["points"].round(1),
+        "Metric": pts["Metric"], "Criterion": pts["Criterion"], "Value": pts["Value"], "Bucket": pts["Bucket"],
+        "Bucket points": pts["band_points"].round(1), "Points (after short-history adjustment)": pts["points"].round(1),
         "Weight": pts["weight"].map(pct), "Adds to score": pts["Contribution"].round(2)}),
         hide_index=True, width="stretch")
     st.code(" + ".join(f"{w:.3f}×{p:.1f}" for w, p in zip(pts["weight"], pts["points"])) + f" = {row['score']:.2f}", language=None)
