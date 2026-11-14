@@ -87,7 +87,7 @@ function build(d) {
   add(bullet(B('Weights: '), 'learned by logistic regression, for each metric and therefore for each criterion.'));
   add(bullet(B('Points: '), "each metric is split into buckets, and a bucket with a lower real default rate earns more points."));
   add(bullet(B('Score: '), 'the weighted sum of points, from 0 (riskiest) to 100 (safest).'));
-  add(bullet(B('Cut-offs: '), `a loan is approved only in score ranges where the real default rate is below the average. On the test loans, ${pct(S.test.approval_rate, 0)} would be approved; ${pct(S.test.bad_rate_approved)} of approved loans defaulted, against ${pct(S.test.bad_rate_rejected)} of rejected loans (all loans: ${pct(d.overall.appr, 0)} approved, ${pct(d.overall.bad_appr)} vs ${pct(d.overall.bad_rej)}).`));
+  add(bullet(B('Thresholds: '), `a loan is approved only in score ranges where the real default rate is below the average. On the test loans, ${pct(S.test.approval_rate, 0)} would be approved; ${pct(S.test.bad_rate_approved)} of approved loans defaulted, against ${pct(S.test.bad_rate_rejected)} of rejected loans (all loans: ${pct(d.overall.appr, 0)} approved, ${pct(d.overall.bad_appr)} vs ${pct(d.overall.bad_rej)}).`));
   add(P(`The scorecard was learned on the earliest ${int(S.train.n)} loans and checked on the latest ${int(S.test.n)}, which it never saw. It separates repaid from defaulted loans with a Gini of ${f2(S.train.gini)} on the training loans and ${f2(S.test.gini)} on the test loans, and the default rate rises steadily from grade A to grade E. The test set contains only ${S.test.n_bad} defaulted loans, so the test figures show a direction rather than a precise rate.`));
 
   // 2
@@ -130,7 +130,7 @@ function build(d) {
     ['metric_correlation', 'pair of metrics', 'rank correlation'],
     ['scorecard_band', 'metric × bucket', 'value range, points, default rate'],
     ['scorecard_weight / criterion_weight', 'metric / criterion', 'regression coefficient and weight'],
-    ['scorecard_param', 'setting', 'grade cut-offs, approve line, short-history constant'],
+    ['scorecard_param', 'setting', 'grade thresholds, approve line, short-history constant'],
     ['loan_metric_points, loan_score', 'loan (× metric)', 'points, score, grade, decision'],
     ['validation_* views', 'split / grade', 'Gini, approval and default rates, robustness checks'],
   ]));
@@ -235,7 +235,7 @@ function build(d) {
   add(gap());
   add(figure('bad_rate_by_grade.png', 'Figure 5. Share of loans that really defaulted, by grade (blue = approved grades, red = rejected).', 560));
   add(P(`The default rate rises from grade A to grade E on both sets (train ${gradeRow('train')}; test ${gradeRow('test')}). The test Gini (${f2(S.test.gini)}) is higher than the training Gini (${f2(S.train.gini)}), but the test set holds only ${S.test.n_bad} defaulted loans, so this difference should not be read as an improvement.`));
-  add(figure('score_distribution.png', 'Figure 6. Score distribution with the grade cut-offs (dashed).', 600));
+  add(figure('score_distribution.png', 'Figure 6. Score distribution with the grade thresholds (dashed).', 600));
   add(H2('7.1 Robustness checks'));
   add(P('Running loans (status C) may still default later. The scorecard was therefore also checked on finished loans only and on loans issued at least a year before the data ends.'));
   add(table(['Check', 'Set', 'Loans', 'Defaulted', 'Gini'], d.finished.map((f) => [
@@ -268,7 +268,7 @@ function build(d) {
   // 10
   add(H('10. Limitations'));
   add(bullet(`Few defaulted loans: ${nBad} in total and ${S.test.n_bad} in the test set. Test results show a direction, not precise rates.`));
-  add(bullet('One bank in one country in the 1990s. The method transfers to other data; the exact weights and cut-offs would need to be learned again.'));
+  add(bullet('One bank in one country in the 1990s. The method transfers to other data; the exact weights and thresholds would need to be learned again.'));
   add(bullet('No declared income: income is estimated from money coming into the account.'));
   add(bullet('Each account has at most one loan, so repayment of earlier loans cannot be measured. Overdrafts and penalty interest are the closest signal available.'));
   add(bullet(`Joint account carries the ${rankWord} weight (${pct(jointW?.weight)}) and decides most of grade A, because none of the joint-account training loans defaulted. With more data this weight would likely shrink.`));

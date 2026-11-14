@@ -191,7 +191,7 @@ summ = data["summary"].set_index("split")
 st.title("Credit Risk Scorecard")
 st.caption(
     f"{len(scores):,} real loans (Berka Czech bank data, 1993–1998), each scored with only the 12 months of "
-    "account history before the loan start date. Weights, buckets and cut-offs were learned on the earliest 70% of loans "
+    "account history before the loan start date. Weights, buckets and thresholds were learned on the earliest 70% of loans "
     f"(train) and checked on the latest 30% (test). {DASHBOARD_NOTE}"
 )
 
@@ -256,9 +256,9 @@ with tab_port:
     cut = pd.DataFrame({"score": [P["grade_D"], P["grade_C"], P["grade_B"], P["grade_A"]],
                         "label": ["D | E", "C | D (approve line)", "B | C", "A | B"]})
     rules = alt.Chart(cut).mark_rule(strokeDash=[4, 3], color="#8c8c8c").encode(
-        x="score:Q", tooltip=[alt.Tooltip("label:N", title="Grade cut-off"), alt.Tooltip("score:Q", title="Score", format=".1f")])
+        x="score:Q", tooltip=[alt.Tooltip("label:N", title="Grade threshold"), alt.Tooltip("score:Q", title="Score", format=".1f")])
     st.altair_chart((hist + rules).properties(height=260), width="stretch")
-    st.caption(f"Dashed lines are the grade cut-offs: A ≥ {P['grade_A']:.1f}, B ≥ {P['grade_B']:.1f}, "
+    st.caption(f"Dashed lines are the grade thresholds: A ≥ {P['grade_A']:.1f}, B ≥ {P['grade_B']:.1f}, "
                f"C ≥ {P['grade_C']:.1f}, D ≥ {P['grade_D']:.1f}. The approve line is where a score decile's real default rate "
                f"stops being below the average ({P['portfolio_bad_rate']:.1%}).")
 

@@ -17,7 +17,7 @@ SELECT
     (SELECT BOOL_AND(d >= 0) FROM mono WHERE d IS NOT NULL)                                AS grade_monotonic_ok,
     (SELECT ABS(v.gini - p.value) < 0.005 FROM berka.validation_summary v, berka.scorecard_param p
       WHERE v.split = 'train' AND p.name = 'train_gini')                                   AS gini_matches_fit_ok,
-    -- SQL grades on train must equal the grades the fit computed (no rounding drift at the cut-offs)
+    -- SQL grades on train must equal the grades the fit computed (no rounding drift at the thresholds)
     (SELECT BOOL_AND(COALESCE(c.n, 0) = p.value)
        FROM berka.scorecard_param p
        LEFT JOIN (SELECT grade, COUNT(*) AS n FROM berka.loan_score WHERE split = 'train' GROUP BY grade) c

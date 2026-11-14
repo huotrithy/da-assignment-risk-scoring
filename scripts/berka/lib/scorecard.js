@@ -132,7 +132,7 @@ function weightsFromCoef(coef) {
 
 const quantileDesc = (sortedDesc, q) => sortedDesc[Math.min(sortedDesc.length - 1, Math.max(0, Math.ceil(q * sortedDesc.length) - 1))];
 
-// Grade cut-offs (spec §6b). Walk score deciles from the top; approve a decile only while its own
+// Grade thresholds (spec §6b). Walk score deciles from the top; approve a decile only while its own
 // bad rate is below the portfolio average. A/B/C split the approved range in thirds, D/E the rejected range in half.
 function gradeCutoffs(scores, y, portfolioBadRate) {
   const rows = scores.map((s, i) => [s, y[i]]).sort((a, b) => b[0] - a[0]);

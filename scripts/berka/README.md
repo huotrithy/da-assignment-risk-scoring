@@ -2,7 +2,7 @@
 
 The previous version scored synthetic customers with judgement-based metrics and weights. The new version moves to
 the **Berka / PKDD'99 Czech bank dataset** (real accounts, transactions and loans with known
-outcomes, 1993–1998), so every metric, bucket, weight and cut-off is learned from — and checked
+outcomes, 1993–1998), so every metric, bucket, weight and threshold is learned from — and checked
 against — what actually happened to each loan.
 
 Source: `http://lisp.vse.cz/pkdd99/DATA/data_berka.zip` (same data as
@@ -23,7 +23,7 @@ npm test                                 # unit tests for the parsing and scorec
 |---|---|---|
 | Load | `load_berka.js`, `00_schema.sql` | schema `berka`: district, account, client, disposition, card, loan, trans, standing_order (Czech codes translated) |
 | Features | `10_features.sql` | `loan_features`: one row per loan, from the **12 months before the loan date only** |
-| Fit | `fit_scorecard.js`, `01_constants_schema.sql`, `lib/scorecard.js` | evidence, buckets, points, weights, cut-offs (train loans only) |
+| Fit | `fit_scorecard.js`, `01_constants_schema.sql`, `lib/scorecard.js` | evidence, buckets, points, weights, thresholds (train loans only) |
 | Score | `20_score.sql` | `loan_metric_points`, `loan_score` |
 | Validate | `30_validate.sql` | views `validation_summary`, `validation_by_grade`, `validation_finished`, `validation_history` |
 | Checks | `checks/*.sql` | run automatically after each stage by `run_all.js`; every `*_ok` column must be `true` |
@@ -40,7 +40,7 @@ npm test                                 # unit tests for the parsing and scorec
 | `scorecard_band` | value range → points (0 = riskiest bucket, 100 = safest), default rate and count per bucket |
 | `scorecard_weight` | regression coefficient and weight of each kept metric (weights sum to 1) |
 | `criterion_weight` | weight of each criterion = sum of its metrics' weights |
-| `scorecard_param` | `shrink_k`, grade cut-offs, `approve_cutoff`, `l2`, `train_gini`, `portfolio_bad_rate`, train counts |
+| `scorecard_param` | `shrink_k`, grade thresholds, `approve_cutoff`, `l2`, `train_gini`, `portfolio_bad_rate`, train counts |
 
 Rules that produce those numbers (all in `fit_scorecard.js`):
 
@@ -52,7 +52,7 @@ Rules that produce those numbers (all in `fit_scorecard.js`):
   m = months observed; k chosen from {3, 6, 12} by best training Gini.
 - **Weights:** L2 logistic regression of default on the points; weight = |coefficient| ÷ Σ|coefficient|, so the
   score ranks loans exactly as the regression does. Constants are stored at full precision.
-- **Cut-offs:** walk the score deciles from the top and approve each while its own default rate is below
+- **Thresholds:** walk the score deciles from the top and approve each while its own default rate is below
   the portfolio average; A/B/C split the approved range in thirds, D/E the rejected range in half; each
   cut sits midway between neighbouring scores. `checks/score_check.sql` verifies SQL grades = fit grades.
 - **Score:** Σ weight × points, 0–100. No 300–850 scaling.
@@ -62,7 +62,7 @@ Rules that produce those numbers (all in `fit_scorecard.js`):
 
 Kept metrics and weights: overdraft (negative-balance) events 33.9%, joint account 22.6%, balance
 volatility 22.0%, debt-to-income 10.8%, balance trend 6.7%, income sources 4.1%. Shrink k = 3.
-Cut-offs: A ≥ 73.08, B ≥ 65.30, C ≥ 61.23 (approve), D ≥ 53.53, else E.
+Thresholds: A ≥ 73.08, B ≥ 65.30, C ≥ 61.23 (approve), D ≥ 53.53, else E.
 
 | | Gini | Loans | Defaulted | Approved | Default rate approved | Default rate rejected |
 |---|---|---|---|---|---|---|

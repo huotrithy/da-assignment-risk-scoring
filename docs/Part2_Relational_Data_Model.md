@@ -54,7 +54,7 @@ Loan status: A = finished, paid; B = finished, not paid; C = running, on time; D
 | `scorecard_band` | metric × bucket | `fit_scorecard.js` | value range → points, default rate, training count |
 | `scorecard_weight` | kept metric | `fit_scorecard.js` | regression coefficient, weight, missing-value bucket |
 | `criterion_weight` | criterion | `fit_scorecard.js` | sum of its metrics' weights |
-| `scorecard_param` | setting | `fit_scorecard.js` | grade cut-offs, approve line, shrinkage k, training Gini |
+| `scorecard_param` | setting | `fit_scorecard.js` | grade thresholds, approve line, shrinkage k, training Gini |
 | `loan_metric_points` | loan × kept metric | `20_score.sql` | raw value, bucket, points |
 | `loan_score` | loan | `20_score.sql` | criterion points, score 0–100, grade, approved |
 | `validation_*` views | split / grade | `30_validate.sql` | Gini, approval, default rate by grade, robustness checks |

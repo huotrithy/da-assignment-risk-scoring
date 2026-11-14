@@ -4,7 +4,7 @@
 --   2. window metrics: points pulled toward the training average when few months were observed
 --        points = avg + (points - avg) * months / (months + shrink_k)
 --   3. score = sum of weight x points  (0..100, higher = safer)
---   4. grade from the cut-offs in scorecard_param; approved = grade A-C
+--   4. grade from the thresholds in scorecard_param; approved = grade A-C
 -- ============================================================================
 DROP TABLE IF EXISTS berka.loan_score CASCADE;          -- validation views are rebuilt by 30_validate.sql
 DROP TABLE IF EXISTS berka.loan_metric_points CASCADE;

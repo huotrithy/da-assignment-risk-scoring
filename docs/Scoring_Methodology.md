@@ -5,7 +5,7 @@
 The scorecard gives each loan a score from 0 (riskiest) to 100 (safest) and a grade from A to E.
 Grades A–C are approved; D and E are rejected.
 
-The previous version built the same kind of scorecard on synthetic data, with metrics, weights and cut-offs chosen
+The previous version built the same kind of scorecard on synthetic data, with metrics, weights and thresholds chosen
 by judgement. The new version rebuilds it on real bank data — the Berka / PKDD'99 Czech bank dataset — where
 the outcome of every loan is known. Each choice is now made by a written rule applied to the data,
 and each rule is checked on loans the scorecard has never seen.
@@ -17,7 +17,7 @@ and each rule is checked on loans the scorecard has never seen.
 | Weights | 35/25/20/10/10, judgement | learned by logistic regression |
 | Points | 100/70/40/10 by quartile rank | from each bucket's real default rate (weight of evidence) |
 | Score scale | 300–850 (×5.5 + 300) | 0–100, no scaling |
-| Cut-offs | judgement | approve only where real default rate is below average |
+| Thresholds | judgement | approve only where real default rate is below average |
 | Validation | not possible (no outcome) | train/test split, Gini, default rate per grade |
 
 ## 2. Outcome and data window
@@ -118,7 +118,7 @@ A customer with a short clean record therefore cannot reach the full 100.
 
     score = Σ weight × points      (0–100)
 
-Cut-offs are set on the training scores:
+Thresholds are set on the training scores:
 
 - **Approve line:** walk the score deciles from the top; approve a decile only while its own default rate
   is below the portfolio average (13.4% on the training loans). The approve line is the bottom of the
@@ -127,7 +127,7 @@ Cut-offs are set on the training scores:
 - Each cut sits midway between the boundary score and the next lower score, so rounding cannot move a
   loan across it.
 
-Current cut-offs: A ≥ 73.08, B ≥ 65.30, C ≥ 61.23 (approve), D ≥ 53.53, otherwise E.
+Current thresholds: A ≥ 73.08, B ≥ 65.30, C ≥ 61.23 (approve), D ≥ 53.53, otherwise E.
 
 ## 8. Validation
 

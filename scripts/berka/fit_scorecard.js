@@ -2,7 +2,7 @@
 // Usage: node scripts/berka/fit_scorecard.js   (needs berka.loan_features from 10_features.sql)
 //
 // Steps: evidence per candidate metric -> drop weak / duplicate metrics -> bands and points ->
-// short-history shrinkage -> logistic regression weights -> grade cut-offs.
+// short-history shrinkage -> logistic regression weights -> grade thresholds.
 const { connect, runFile } = require('./lib/db');
 const sc = require('./lib/scorecard');
 
@@ -140,7 +140,7 @@ async function main() {
       m.reason = `|Gini| ${Math.abs(m.gini).toFixed(2)}; default rate ${r.join(' → ')} across its ${r.length} buckets (lowest value first)`;
     }
 
-    // 6. Grade cut-offs on train scores
+    // 6. Grade thresholds on train scores
     const pbr = mean(y);
     const cut = sc.gradeCutoffs(best.scores, y, pbr);
 
@@ -171,7 +171,7 @@ async function main() {
     console.table(ev.map((e) => ({ metric: e.metric, gini: r3(e.gini), verdict: e.verdict })));
     console.log('Kept metrics:');
     console.table(metrics.map((m, j) => ({ metric: m.metric, criterion: m.criterion, coef: +best.model.coef[j].toFixed(3), weight: +(100 * best.weights[j]).toFixed(1), bands: m.bands.map((b) => b.points).join('/') })));
-    console.log('shrink k', best.k, '| train Gini', best.gini.toFixed(3), '| cut-offs', JSON.stringify(Object.fromEntries(Object.entries(cut).map(([k, v]) => [k, +v.toFixed(2)]))));
+    console.log('shrink k', best.k, '| train Gini', best.gini.toFixed(3), '| thresholds', JSON.stringify(Object.fromEntries(Object.entries(cut).map(([k, v]) => [k, +v.toFixed(2)]))));
   } catch (e) {
     await db.query('ROLLBACK').catch(() => {});
     throw e;
