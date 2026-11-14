@@ -1,5 +1,5 @@
 // Generate docs/Final_Report.docx from the live scorecard tables (no number is typed by hand).
-// Needs: npm run scorecard (tables) and node scripts/berka/capture_charts.js (images in docs/img/stage3).
+// Needs: npm run scorecard (tables) and node scripts/berka/capture_charts.js (images in docs/img/charts).
 // Usage: node scripts/berka/generate_report.js
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +10,7 @@ const {
 const { METRIC, CRIT, VERDICT, pct, f2, int, load, bandText, valueText } = require('./lib/report_data');
 
 const ROOT = path.join(__dirname, '..', '..');
-const IMG = path.join(ROOT, 'docs', 'img', 'stage3');
+const IMG = path.join(ROOT, 'docs', 'img', 'charts');
 const OUT = path.join(ROOT, 'docs', 'Final_Report.docx');
 const DASHBOARD_URL = 'https://da-assignment.iamrithy.com/';
 

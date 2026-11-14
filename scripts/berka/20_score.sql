@@ -1,5 +1,5 @@
 -- ============================================================================
--- Stage 3 — Score every loan with the constants learned by fit_scorecard.js.
+-- Score every loan with the constants learned by fit_scorecard.js.
 --   1. raw value -> band (scorecard_band) -> points 0..100
 --   2. window metrics: points pulled toward the training average when few months were observed
 --        points = avg + (points - avg) * months / (months + shrink_k)

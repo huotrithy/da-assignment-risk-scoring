@@ -1,4 +1,4 @@
-// Capture dashboard charts as PNG for the report and slides (docs/img/stage3/).
+// Capture dashboard charts as PNG for the report and slides (docs/img/charts/).
 // Needs the dashboard running (docker compose up -d) and Microsoft Edge installed.
 // Usage: node scripts/berka/capture_charts.js [url]   (default http://localhost:8502)
 const fs = require('fs');
@@ -6,7 +6,7 @@ const path = require('path');
 const { chromium } = require('playwright-core');
 
 const URL = process.argv[2] || 'http://localhost:8502';
-const OUT = path.join(__dirname, '..', '..', 'docs', 'img', 'stage3');
+const OUT = path.join(__dirname, '..', '..', 'docs', 'img', 'charts');
 
 // [tab, index of the visible chart in that tab, file name]
 const SHOTS = [

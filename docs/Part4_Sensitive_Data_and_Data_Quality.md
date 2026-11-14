@@ -1,4 +1,4 @@
-# Part 4: Sensitive Data & Data Quality — Retail Credit Risk Scoring (Stage 3, Berka data)
+# Part 4: Sensitive Data & Data Quality — Retail Credit Risk Scoring (Berka data)
 
 ## 1. Sensitive data
 
@@ -29,8 +29,8 @@ still sensitive and are handled as follows.
 | Short history before some loans | 3.4–22.9 months (median 13) | money metrics averaged over the months actually elapsed; window metrics shrunk toward the average (see Scoring_Methodology §6) |
 | Cards issued after the loan date | most cards | only cards issued **before** the loan count (36 loans), so no future information leaks into the score |
 | No date for when a second user (DISPONENT) joined an account | 869 dispositions | joint-account status treated as known at loan date; stated as a limitation (it may postdate the loan) |
-| Running loans may still go bad (status C) | 403 loans | extra checks on finished loans and on loans at least a year old |
-| Few bad loans | 76 (12 in the test set) | caveat stated with every test result |
+| Running loans may still default (status C) | 403 loans | extra checks on finished loans and on loans at least a year old |
+| Few defaulted loans | 76 (12 in the test set) | caveat stated with every test result |
 
 ## 3. Point-in-time rule
 

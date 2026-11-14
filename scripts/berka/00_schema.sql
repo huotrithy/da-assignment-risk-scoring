@@ -1,5 +1,5 @@
 -- ============================================================================
--- Stage 3 — Berka (PKDD'99 Czech bank) data, translated to English.
+-- Berka (PKDD'99 Czech bank) data, translated to English.
 -- Source: http://lisp.vse.cz/pkdd99/DATA/data_berka.zip
 -- Loaded by scripts/berka/load_berka.js. Re-running drops and rebuilds the schema.
 -- ============================================================================

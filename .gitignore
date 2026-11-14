@@ -231,3 +231,6 @@ __marimo__/
 # Berka raw data (downloaded by scripts/berka/load_berka.js)
 data/berka/
 !scripts/berka/lib/
+
+# Office lock files
+~$*

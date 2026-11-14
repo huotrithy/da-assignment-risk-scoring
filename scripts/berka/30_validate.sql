@@ -1,5 +1,5 @@
 -- ============================================================================
--- Stage 3 — Validation views. Train = loans the constants were learned from;
+-- Validation views. Train = loans the constants were learned from;
 -- test = the latest 30% of loans, never seen by the fit.
 -- Gini = 2*AUC - 1, where AUC = chance a random good loan scores higher than a random bad one.
 -- ============================================================================

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Stage 3 — Point-in-time features, one row per loan.
+-- Point-in-time features, one row per loan.
 -- Window: the 12 months BEFORE the loan date (trans_date < loan_date and
 -- >= loan_date - 365). Nothing on or after the loan date is used, so the
 -- features are exactly what the bank could have seen when it decided.

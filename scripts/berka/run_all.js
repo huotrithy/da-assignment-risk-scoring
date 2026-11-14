@@ -1,4 +1,4 @@
-// Run the whole Stage 3 pipeline: features -> fit -> score -> validate, then print the results.
+// Run the whole scorecard pipeline: features -> fit -> score -> validate, then print the results.
 // Usage: node scripts/berka/run_all.js [--reload]   (--reload first re-loads the raw Berka files)
 const { execFileSync } = require('child_process');
 const path = require('path');

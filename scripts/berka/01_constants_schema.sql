@@ -1,5 +1,5 @@
 -- ============================================================================
--- Stage 3 — Tables that hold everything the fit learns (scripts/berka/fit_scorecard.js).
+-- Tables that hold everything the fit learns (scripts/berka/fit_scorecard.js).
 -- All values are learned on the TRAINING loans only; scoring (20_score.sql) just reads them.
 -- ============================================================================
 -- Re-created on every fit so column changes always reach the database.

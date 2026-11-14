@@ -1,4 +1,4 @@
-"""Credit risk scorecard dashboard — Stage 3 (real bank data: Berka / PKDD'99).
+"""Credit risk scorecard dashboard (real bank data: Berka / PKDD'99).
 
 Reads only stored tables in schema `berka` (built by scripts/berka/run_all.js):
 loan_score, loan_metric_points, loan_features, metric_evidence, metric_correlation,

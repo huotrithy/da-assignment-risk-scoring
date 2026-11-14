@@ -1,7 +1,6 @@
 // Generate docs/Final_Presentation.pptx (previous-version context + new-version evidence in one deck) from the live
-// scorecard tables, in the visual style of docs/Stage2_Presentation_v2.pptx (never modified).
-// Needs capture_charts.js images in docs/img/stage3. docs/Stage3_Presentation.pptx is the earlier
-// Stage 3-only deck and is kept as it was.
+// scorecard tables, in the visual style of the previous deck
+// (archive/previous_version/presentations/Previous_Presentation.pptx). Needs capture_charts.js images in docs/img/charts.
 // Usage: node scripts/berka/generate_slides.js
 const fs = require('fs');
 const path = require('path');
@@ -9,7 +8,7 @@ const PptxGenJS = require('pptxgenjs');
 const { METRIC, CRIT, VERDICT, pct, f2, int, load, bandText, valueText } = require('./lib/report_data');
 
 const ROOT = path.join(__dirname, '..', '..');
-const IMG = path.join(ROOT, 'docs', 'img', 'stage3');
+const IMG = path.join(ROOT, 'docs', 'img', 'charts');
 const OUT = path.join(ROOT, 'docs', 'Final_Presentation.pptx');
 const DASHBOARD_URL = 'https://da-assignment.iamrithy.com/';
 

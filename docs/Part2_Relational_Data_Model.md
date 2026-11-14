@@ -1,8 +1,8 @@
-# Part 2: Relational Data Model — Retail Credit Risk Scoring (Stage 3, Berka data)
+# Part 2: Relational Data Model — Retail Credit Risk Scoring (Berka data)
 
 ## 1. Overview
 
-Stage 3 replaces the Stage 2 synthetic database with the **Berka / PKDD'99 Czech bank dataset**: real,
+The new version replaces the synthetic database of the previous version with the **Berka / PKDD'99 Czech bank dataset**: real,
 anonymised data from one bank covering 1993-01-01 to 1998-12-31. It is loaded into PostgreSQL schema
 `berka` by `scripts/berka/load_berka.js`, with Czech codes translated to English.
 
@@ -49,15 +49,15 @@ Loan status: A = finished, paid; B = finished, not paid; C = running, on time; D
 | Table / view | One row per | Built by | Holds |
 |---|---|---|---|
 | `loan_features` | loan | `10_features.sql` | 14 candidate metrics from the 12 months before the loan date; train/test split |
-| `metric_evidence` | candidate metric | `fit_scorecard.js` | Gini, bad rate per value group, kept/dropped and why |
+| `metric_evidence` | candidate metric | `fit_scorecard.js` | Gini, default rate per value group, kept/dropped and why |
 | `metric_correlation` | pair of metrics | `fit_scorecard.js` | Spearman rank correlation |
-| `scorecard_band` | metric × band | `fit_scorecard.js` | value range → points, bad rate, training count |
+| `scorecard_band` | metric × band | `fit_scorecard.js` | value range → points, default rate, training count |
 | `scorecard_weight` | kept metric | `fit_scorecard.js` | regression coefficient, weight, missing-value band |
 | `criterion_weight` | criterion | `fit_scorecard.js` | sum of its metrics' weights |
 | `scorecard_param` | setting | `fit_scorecard.js` | grade cut-offs, approve line, shrinkage k, training Gini |
 | `loan_metric_points` | loan × kept metric | `20_score.sql` | raw value, band, points |
 | `loan_score` | loan | `20_score.sql` | criterion points, score 0–100, grade, approved |
-| `validation_*` views | split / grade | `30_validate.sql` | Gini, approval, bad rate by grade, robustness checks |
+| `validation_*` views | split / grade | `30_validate.sql` | Gini, approval, default rate by grade, robustness checks |
 
 ## 4. How each feature is derived
 
@@ -78,9 +78,9 @@ Loan status: A = finished, paid; B = finished, not paid; C = running, on time; D
 | Age | client.birth_date | owner's age at loan date |
 | District unemployment | district | owner's district, 1996 rate (1995 if missing) |
 
-## 5. Change from Stage 2
+## 5. Change from the previous version
 
-Stage 2 used a 13-table model designed for the assignment and filled by a data generator. Because the
+The previous version used a 13-table model designed for the assignment and filled by a data generator. Because the
 generator created behaviour from risk levels we chose, the data could not show whether a metric really
-predicts default. Stage 3 keeps the same idea — bank data feeding a scorecard — on real data with known
-outcomes. The Stage 2 schema, generator and scripts are kept in `archive/stage2/`.
+predicts default. The new version keeps the same idea — bank data feeding a scorecard — on real data with known
+outcomes. The previous schema, generator and scripts are kept in `archive/previous_version/`.
