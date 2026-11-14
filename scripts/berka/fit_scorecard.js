@@ -24,7 +24,7 @@ const CANDIDATES = [
   { metric: 'district_unemployment', criterion: 'demographics', window: false },
 ];
 const CRITERIA = ['payment', 'income', 'balance', 'relationship', 'demographics'];
-const MIN_GINI = 0.10;      // below this a metric barely separates good from bad
+const MIN_GINI = 0.10;      // below this a metric barely separates repaid from defaulted
 const MAX_CORR = 0.5;       // |Spearman| at or above this = the two metrics measure the same thing
 const SHRINK_KS = [3, 6, 12];
 const L2 = 1.0;
@@ -101,7 +101,7 @@ async function main() {
 
     // 3. Selection: weak first, then keep the stronger of each correlated pair
     for (const e of ev) {
-      if (Math.abs(e.gini) < MIN_GINI) { e.verdict = 'dropped_weak'; e.reason = `|Gini| ${Math.abs(e.gini).toFixed(2)} < ${MIN_GINI}: barely separates good from bad loans`; }
+      if (Math.abs(e.gini) < MIN_GINI) { e.verdict = 'dropped_weak'; e.reason = `|Gini| ${Math.abs(e.gini).toFixed(2)} < ${MIN_GINI}: barely separates repaid from defaulted loans`; }
     }
     const strong = ev.filter((e) => !e.verdict).sort((a, b) => Math.abs(b.gini) - Math.abs(a.gini));
     const kept = [];
@@ -115,7 +115,7 @@ async function main() {
     let metrics = [];
     for (const e of kept) {
       const b = buildBands(e, e.x, y);
-      if (b.bands.length < 2) { e.verdict = 'dropped_weak'; e.reason = 'bad rate not monotonic in any banding: all bands merged into one'; continue; }
+      if (b.bands.length < 2) { e.verdict = 'dropped_weak'; e.reason = 'default rate not monotonic in any banding: all bands merged into one'; continue; }
       metrics.push(Object.assign(e, b));
     }
 
@@ -137,7 +137,7 @@ async function main() {
     for (const m of metrics) {
       const r = m.bands.map((b) => `${(100 * b.bad_rate).toFixed(0)}%`);
       m.verdict = 'kept';
-      m.reason = `|Gini| ${Math.abs(m.gini).toFixed(2)}; bad rate ${r.join(' → ')} across its ${r.length} bands (lowest value first)`;
+      m.reason = `|Gini| ${Math.abs(m.gini).toFixed(2)}; default rate ${r.join(' → ')} across its ${r.length} bands (lowest value first)`;
     }
 
     // 6. Grade cut-offs on train scores

@@ -113,7 +113,7 @@ def load_all() -> dict:
         "history": query("SELECT * FROM berka.validation_history"),
     }
     d["scores"]["decision"] = d["scores"]["approved"].map({True: "Approve", False: "Reject"})
-    d["scores"]["outcome"] = d["scores"]["is_bad"].map({True: "Bad", False: "Good"})
+    d["scores"]["outcome"] = d["scores"]["is_bad"].map({True: "Defaulted", False: "Repaid / on time"})
     d["param"] = dict(zip(d["params"]["name"], d["params"]["value"]))
     return d
 
@@ -186,7 +186,7 @@ summ = data["summary"].set_index("split")
 st.title("Credit Risk Scorecard")
 st.caption(
     f"{len(scores):,} real loans (Berka Czech bank data, 1993–1998), each scored with only the 12 months of "
-    "account history before the loan date. Weights, bands and cut-offs were learned on the earliest 70% of loans "
+    "account history before the loan start date. Weights, bands and cut-offs were learned on the earliest 70% of loans "
     f"(train) and checked on the latest 30% (test). {DASHBOARD_NOTE}"
 )
 
@@ -196,14 +196,14 @@ tab_port, tab_ev, tab_crit, tab_loan = st.tabs(["Portfolio", "Evidence", "Criter
 with tab_port:
     n, n_bad = len(scores), int(scores["is_bad"].sum())
     c1, c2, c3, c4 = st.columns(4)
-    tile(c1, "Loans scored", f"{n:,}", f"{n_bad} went bad ({n_bad / n:.1%}) · score 0–100")
+    tile(c1, "Loans scored", f"{n:,}", f"{n_bad} defaulted ({n_bad / n:.1%}) · score 0–100")
     tile(c2, "Would be approved (A–C)", pct(scores["approved"].mean(), 0),
          f"approve when score ≥ {P['approve_cutoff']:.1f}")
-    tile(c3, "Bad rate: approved vs rejected",
+    tile(c3, "Default rate: approved vs rejected",
          f"{pct(scores.loc[scores.approved, 'is_bad'].mean())} vs {pct(scores.loc[~scores.approved, 'is_bad'].mean())}",
-         "share of loans that really went bad")
+         "share of loans that defaulted (status B or D)")
     tile(c4, "Gini on unseen loans (test)", f"{summ.loc['test', 'gini']:.2f}",
-         f"train {summ.loc['train', 'gini']:.2f} · test has only {int(summ.loc['test', 'n_bad'])} bad loans")
+         f"train {summ.loc['train', 'gini']:.2f} · test has only {int(summ.loc['test', 'n_bad'])} defaulted loans")
 
     left, right = st.columns(2)
     with left:
@@ -226,16 +226,16 @@ with tab_port:
         bg["label"] = bg["bad_rate"].map(lambda v: f"{100 * v:.0f}%")
         base = alt.Chart(bg).encode(x=alt.X("grade:N", sort=GRADES, title=None, axis=alt.Axis(labelAngle=0)))
         bars = base.mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=34).encode(
-            y=alt.Y("bad_rate:Q", title="Share of loans that went bad", axis=alt.Axis(format="%")),
+            y=alt.Y("bad_rate:Q", title="Default rate (share of loans that defaulted)", axis=alt.Axis(format="%")),
             color=alt.Color("decision:N", scale=DECISION_SCALE, legend=None),
             tooltip=[alt.Tooltip("split_label:N", title="Set"), alt.Tooltip("grade:N", title="Grade"),
-                     alt.Tooltip("n:Q", title="Loans"), alt.Tooltip("n_bad:Q", title="Went bad"),
-                     alt.Tooltip("bad_rate:Q", title="Bad rate", format=".1%")])
+                     alt.Tooltip("n:Q", title="Loans"), alt.Tooltip("n_bad:Q", title="Defaulted"),
+                     alt.Tooltip("bad_rate:Q", title="Default rate", format=".1%")])
         chart = (bars + base.mark_text(dy=-8, fontSize=12).encode(y="bad_rate:Q", text="label:N")) \
             .properties(height=280, width=230).facet(column=alt.Column("split_label:N", title=None, sort="descending"))
         st.altair_chart(chart)
-        st.caption("Bad rate rises from A to E on both sets — the grades sort real risk. "
-                   f"Test numbers rest on {int(summ.loc['test', 'n_bad'])} bad loans, so read them as a direction, not a precise rate.")
+        st.caption("Default rate rises from A to E on both sets — the grades sort real risk. "
+                   f"Test numbers rest on {int(summ.loc['test', 'n_bad'])} defaulted loans, so read them as a direction, not a precise rate.")
 
     st.subheader("Score distribution")
     h = scores[["score", "grade", "decision"]].copy()
@@ -254,7 +254,7 @@ with tab_port:
         x="score:Q", tooltip=[alt.Tooltip("label:N", title="Grade cut-off"), alt.Tooltip("score:Q", title="Score", format=".1f")])
     st.altair_chart((hist + rules).properties(height=260), width="stretch")
     st.caption(f"Dashed lines are the grade cut-offs: A ≥ {P['grade_A']:.1f}, B ≥ {P['grade_B']:.1f}, "
-               f"C ≥ {P['grade_C']:.1f}, D ≥ {P['grade_D']:.1f}. The approve line is where a score decile's real bad rate "
+               f"C ≥ {P['grade_C']:.1f}, D ≥ {P['grade_D']:.1f}. The approve line is where a score decile's real default rate "
                f"stops being below the average ({P['portfolio_bad_rate']:.1%}).")
 
 # =========================================================================== evidence
@@ -266,7 +266,7 @@ with tab_ev:
     ev["Verdict"] = ev["verdict"].map(VERDICT_LABEL)
     ev["status"] = ev["verdict"].map(lambda v: "Kept" if v == "kept" else "Dropped")
 
-    st.subheader("1 · Does each metric separate good loans from bad ones?")
+    st.subheader("1 · Does each metric separate repaid loans from defaulted ones?")
     st.caption("Strength = |Gini| on the training loans: 0 = no better than a coin flip, 1 = perfect. "
                "Metrics under 0.10 were dropped as weak.")
     order = ev.sort_values("strength", ascending=False)["Metric"].tolist()
@@ -280,10 +280,10 @@ with tab_ev:
     rule = alt.Chart(pd.DataFrame({"x": [0.10]})).mark_rule(strokeDash=[4, 3], color="#8c8c8c").encode(x="x:Q")
     st.altair_chart((bars + rule).properties(height=420), width="stretch")
 
-    st.subheader("2 · Bad rate across each metric's quartiles")
+    st.subheader("2 · Default rate across each metric's quartiles")
     st.caption("Training loans split into up to four groups of similar size by the metric's value (lowest → highest). "
                "Equal values stay in the same group, so a yes/no metric shows two groups (no, yes). "
-               "A useful metric shows bad rate climbing or falling steadily.")
+               "A useful metric shows default rate climbing or falling steadily.")
     q = ev.melt(id_vars=["metric", "Metric", "status"],
                 value_vars=["bad_rate_q1", "bad_rate_q2", "bad_rate_q3", "bad_rate_q4"],
                 var_name="quartile", value_name="bad_rate")
@@ -300,7 +300,7 @@ with tab_ev:
     qbars = qb.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
         y=alt.Y("bad_rate:Q", title=None, axis=alt.Axis(format="%", tickCount=3)),
         color=alt.Color("status:N", scale=alt.Scale(domain=["Kept", "Dropped"], range=[APPROVE_COLOR, MUTED]), legend=None),
-        tooltip=["Metric:N", alt.Tooltip("group:N", title="Group"), alt.Tooltip("bad_rate:Q", title="Bad rate", format=".1%")])
+        tooltip=["Metric:N", alt.Tooltip("group:N", title="Group"), alt.Tooltip("bad_rate:Q", title="Default rate", format=".1%")])
     qtext = qb.mark_text(dy=-6, fontSize=10, color="#3d3d3a").encode(y="bad_rate:Q", text="label:N")
     small = alt.layer(qbars, qtext, data=q).properties(width=150, height=110) \
         .facet(facet=alt.Facet("Metric:N", sort=order, title=None), columns=5).resolve_scale(x="independent")
@@ -322,7 +322,7 @@ with tab_ev:
                     width="stretch")
 
     st.subheader("4 · Weights learned from the data")
-    st.caption(f"Logistic regression of 'went bad' on each kept metric's points (training loans, L2 = {P['l2']:.0f}). "
+    st.caption(f"Logistic regression of 'defaulted' on each kept metric's points (training loans, L2 = {P['l2']:.0f}). "
                "Weight = size of the metric's regression coefficient, scaled so all weights add up to 100%. All points share the same 0–100 scale, so the score ranks loans exactly as the regression does.")
     w = data["weights"].copy()
     w["Metric"], w["Criterion"] = w["metric"].map(METRIC_LABEL), w["criterion"].map(CRITERIA)
@@ -338,30 +338,30 @@ with tab_ev:
         cw["Criterion"] = cw["criterion"].map(CRITERIA)
         cw["Weight"] = cw["weight"].map(lambda v: f"{100 * v:.1f}%")
         st.dataframe(cw.sort_values("weight", ascending=False)[["Criterion", "Weight"]], hide_index=True, width="stretch")
-        st.caption("Criterion weight = sum of its metrics' weights. Demographics ended at 0%: age and district did not predict bad loans.")
+        st.caption("Criterion weight = sum of its metrics' weights. Demographics ended at 0%: age and district did not predict defaults.")
 
     st.subheader("5 · Checks on loans the model never saw")
     s = data["summary"].copy()
     s["Set"] = s["split"].map({"train": "Train", "test": "Test"})
     st.dataframe(pd.DataFrame({
-        "Set": s["Set"], "Loans": s["n"], "Went bad": s["n_bad"], "Gini": s["gini"].round(2),
-        "Approved": s["approval_rate"].map(pct), "Bad rate if approved": s["bad_rate_approved"].map(pct),
-        "Bad rate if rejected": s["bad_rate_rejected"].map(pct)}).sort_values("Set", ascending=False),
+        "Set": s["Set"], "Loans": s["n"], "Defaulted": s["n_bad"], "Gini": s["gini"].round(2),
+        "Approved": s["approval_rate"].map(pct), "Default rate if approved": s["bad_rate_approved"].map(pct),
+        "Default rate if rejected": s["bad_rate_rejected"].map(pct)}).sort_values("Set", ascending=False),
         hide_index=True, width="stretch")
     f = data["finished"].copy()
     f["View"] = f["view_name"].map({"finished_A_vs_B": "Finished loans only (paid off vs defaulted)",
                                      "issued_12m_before_data_end": "Loans at least 12 months old"})
-    st.dataframe(pd.DataFrame({"View": f["View"], "Set": f["split"].str.title(), "Loans": f["n"], "Went bad": f["n_bad"],
-                               "Gini": f["gini"].map(lambda v: "— (no bad loans)" if pd.isna(v) else f"{v:.2f}")}),
+    st.dataframe(pd.DataFrame({"View": f["View"], "Set": f["split"].str.title(), "Loans": f["n"], "Defaulted": f["n_bad"],
+                               "Gini": f["gini"].map(lambda v: "— (no defaults)" if pd.isna(v) else f"{v:.2f}")}),
                  hide_index=True, width="stretch")
-    st.caption("Running loans may still go bad later, so the score is also checked on finished and older loans. "
+    st.caption("Running loans may still default later, so the score is also checked on finished and older loans. "
                "The test set has very few finished loans — the main limitation of this check.")
 
     st.subheader("6 · Short history is not rewarded")
     hs = data["history"].copy()
     hs["order"] = hs["history_bucket"].map({"<6": 0, "6-12": 1, "12+": 2})
     st.dataframe(pd.DataFrame({"Account age at loan (months)": hs["history_bucket"], "Loans": hs["n"],
-                               "Really went bad": hs["bad_rate"].map(pct), "Average score": hs["avg_score"],
+                               "Default rate": hs["bad_rate"].map(pct), "Average score": hs["avg_score"],
                                "Approved": hs["approval_rate"].map(pct), "o": hs["order"]}).sort_values("o").drop(columns="o"),
                  hide_index=True, width="stretch")
     st.caption(f"Window metrics are pulled toward the average when few months were seen "
@@ -389,7 +389,7 @@ with tab_crit:
 # =========================================================================== loan drill-down
 with tab_loan:
     st.subheader("Why did this loan get its grade?")
-    st.caption("Pick a loan. Everything below uses only what the bank could see before the loan date; "
+    st.caption("Pick a loan. Everything below uses only what the bank could see before the loan start date; "
                "the real outcome is shown last, after the score.")
     top = scores.sort_values("score", ascending=False)
     examples = {
@@ -459,6 +459,6 @@ with tab_loan:
     else:
         st.markdown("**No penalty interest and no negative balance in the 12 months before the loan.**")
 
-    outcome = {"A": "finished and fully paid", "B": "finished but NOT paid (bad)", "C": "still running, paying on time",
-               "D": "still running, in debt (bad)"}[row["status"]]
+    outcome = {"A": "finished and fully paid", "B": "finished but NOT paid (defaulted)", "C": "still running, paying on time",
+               "D": "still running, in debt (defaulted)"}[row["status"]]
     (st.error if row["is_bad"] else st.success)(f"**What really happened:** status {row['status']} — {outcome}.")
