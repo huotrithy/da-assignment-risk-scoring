@@ -15,7 +15,7 @@ CREATE TABLE berka.metric_evidence (      -- why each candidate metric was kept 
     bad_rate_q2 NUMERIC(6,3),
     bad_rate_q3 NUMERIC(6,3),
     bad_rate_q4 NUMERIC(6,3),
-    verdict     TEXT NOT NULL,    -- kept | dropped_weak | dropped_duplicate | dropped_no_added_value
+    verdict     TEXT NOT NULL,    -- kept | dropped_weak | dropped_duplicate
     reason      TEXT NOT NULL
 );
 CREATE TABLE berka.metric_correlation (   -- Spearman rank correlation between candidates (train)
@@ -26,7 +26,7 @@ CREATE TABLE berka.scorecard_band (       -- value range -> points for each kept
     metric   TEXT, band INT,
     lower    NUMERIC,             -- exclusive; NULL = no lower limit
     upper    NUMERIC,             -- inclusive; NULL = no upper limit
-    points   NUMERIC(6,2),        -- 0 (riskiest band) .. 100 (safest band)
+    points   NUMERIC(6,2),        -- by rank: 100 (safest band) .. 10 (riskiest band)
     bad_rate NUMERIC(6,3),
     n_train  INT,
     PRIMARY KEY (metric, band)
@@ -34,8 +34,8 @@ CREATE TABLE berka.scorecard_band (       -- value range -> points for each kept
 CREATE TABLE berka.scorecard_weight (     -- weight of each kept metric in the 0-100 score
     metric        TEXT PRIMARY KEY,
     criterion     TEXT NOT NULL,
-    coef          NUMERIC       ,   -- logistic-regression coefficient on points/100 (negative = lowers risk)
-    weight        NUMERIC       ,   -- share of the score, all metrics sum to 1
+    strength      NUMERIC(6,3),   -- |Gini| of the metric on the training loans
+    weight        NUMERIC       ,   -- strength / total strength; all metrics sum to 1
     null_band     INT NOT NULL,   -- band used when the value is missing (the riskier end)
     window_metric BOOLEAN NOT NULL -- true = measured over the 12-month window, so shrunk for short history
 );

@@ -84,9 +84,9 @@ function build(d) {
   add(P(`This report describes a credit risk scorecard built on real bank data. The Berka / PKDD'99 dataset holds ${int(d.counts.accounts)} accounts, ${int(d.counts.trans)} transactions and ${int(d.counts.loans)} loans from one Czech bank (1993–1998), with the real outcome of every loan: ${nBad} loans (${pct(nBad / d.counts.loans)}) were not repaid.`));
   add(P('Because the outcome is known, every part of the scorecard is decided by the data:'));
   add(bullet(B('Metrics: '), `${d.evidence.length} candidate metrics were tested; ${kept.length} were kept. ${listOf(weak)} were dropped because they did not separate repaid from defaulted loans; ${listOf(dups).replace(/^./, (c) => c.toLowerCase())} were dropped because they duplicated a stronger metric.`));
-  add(bullet(B('Weights: '), 'learned by logistic regression, for each metric and therefore for each criterion.'));
-  add(bullet(B('Points: '), "each metric is split into buckets, and a bucket with a lower real default rate earns more points."));
-  add(bullet(B('Score: '), 'the weighted sum of points, from 0 (riskiest) to 100 (safest).'));
+  add(bullet(B('Weights: '), 'a stronger metric counts more: the weight of a metric is its share of the total strength of the kept metrics.'));
+  add(bullet(B('Points: '), 'each metric is split into buckets and scored by rank: 100 points for the bucket with the lowest real default rate, down to 10 for the highest.'));
+  add(bullet(B('Score: '), 'the weighted sum of points; a higher score is safer and the maximum is 100.'));
   add(bullet(B('Thresholds: '), `a loan is approved only in score ranges where the real default rate is below the average. On the test loans, ${pct(S.test.approval_rate, 0)} would be approved; ${pct(S.test.bad_rate_approved)} of approved loans defaulted, against ${pct(S.test.bad_rate_rejected)} of rejected loans (all loans: ${pct(d.overall.appr, 0)} approved, ${pct(d.overall.bad_appr)} vs ${pct(d.overall.bad_rej)}).`));
   add(P(`The scorecard was learned on the earliest ${int(S.train.n)} loans and checked on the latest ${int(S.test.n)}, which it never saw. It separates repaid from defaulted loans with a Gini of ${f2(S.train.gini)} on the training loans and ${f2(S.test.gini)} on the test loans, and the default rate rises steadily from grade A to grade E. The test set contains only ${S.test.n_bad} defaulted loans, so the test figures show a direction rather than a precise rate.`));
 
@@ -129,7 +129,7 @@ function build(d) {
     ['metric_evidence', 'candidate metric', 'Gini, default rate per group, verdict and reason'],
     ['metric_correlation', 'pair of metrics', 'rank correlation'],
     ['scorecard_band', 'metric × bucket', 'value range, points, default rate'],
-    ['scorecard_weight / criterion_weight', 'metric / criterion', 'regression coefficient and weight'],
+    ['scorecard_weight / criterion_weight', 'metric / criterion', 'strength and weight'],
     ['scorecard_param', 'setting', 'grade thresholds, approve line, short-history constant'],
     ['loan_metric_points, loan_score', 'loan (× metric)', 'points, score, grade, decision'],
     ['validation_* views', 'split / grade', 'Gini, approval and default rates, robustness checks'],
@@ -141,10 +141,10 @@ function build(d) {
   add(H2('4.1 Overview'));
   add(P('The scorecard is built in six steps. Steps 2 to 5 use only the training loans; step 6 checks the result on the test loans.'));
   add(bullet(B('1. Measure. '), `For every loan, ${d.evidence.length} candidate metrics are calculated from the 12 months before the loan start date (sections 4.2 and 4.3).`));
-  add(bullet(B('2. Test each metric. '), 'Each metric is compared with the real outcome. A metric that does not separate repaid from defaulted loans is dropped (section 4.4).'));
+  add(bullet(B('2. Test each metric. '), 'The strength of each metric is measured against the real outcome. A metric that does not separate repaid from defaulted loans is dropped (section 4.4).'));
   add(bullet(B('3. Remove duplicates. '), 'When two metrics move together, only the stronger one is kept (section 4.4).'));
-  add(bullet(B('4. Give points. '), 'Each kept metric is split into buckets. A bucket with a lower default rate gets more points, from 0 to 100 (section 4.5).'));
-  add(bullet(B('5. Learn weights. '), 'A logistic regression measures how much each metric matters. The weights add up to 100% (section 4.6).'));
+  add(bullet(B('4. Give points. '), 'Each kept metric is split into buckets. Points are given by rank: 100 for the safest bucket, 10 for the riskiest (section 4.5).'));
+  add(bullet(B('5. Set weights. '), 'A stronger metric counts more: weight = strength ÷ total strength. The weights add up to 100% (section 4.6).'));
   add(bullet(B('6. Score and check. '), 'The score is the sum of weight × points. The approve line and the grades are set on the training scores (section 4.8), and the result is checked on the test loans (section 7).'));
   add(H2('4.2 Point-in-time metrics'));
   add(P('Every metric is calculated from transactions dated in the 12 months before the loan start date. Nothing on or after the loan start date is used, so the score only uses what the bank knew when it made the decision. An automated check confirms that no loan uses a later transaction. The same rule applies to cards: only cards issued before the loan count. Most cards in the data were issued after the loan, and counting them would have made card ownership look far more predictive than it really is.'));
@@ -158,20 +158,25 @@ function build(d) {
   ]));
   add(P('Gender is available in the data but is never used as a scoring input.'));
   add(H2('4.4 Selection rules'));
-  add(bullet(B('Strength: '), `Gini of the metric against the outcome on the training loans. 0 means no better than chance, 1 means perfect. Put simply: take one repaid and one defaulted loan at random; Gini = 2 × (the share of such pairs in which the repaid loan has the better value) − 1. For example, the final score has a training Gini of ${f2(S.train.gini)}, so the repaid loan scores higher in ${pct((Number(S.train.gini) + 1) / 2, 0)} of pairs. A metric below 0.10 is dropped as weak.`));
+  add(bullet(B('Strength: '), 'how well the metric tells a defaulted loan from a repaid one, measured on the training loans with a pair test (explained below). A metric with a strength below 0.10 is dropped as weak.'));
   add(bullet(B('Duplicates: '), 'Spearman rank correlation between every pair of metrics. At 0.5 or above (either sign) the two metrics describe the same behaviour, so the weaker one is dropped. This stops one behaviour being scored twice.'));
   add(bullet(B('Usable buckets: '), 'the default rate must move in one direction across at least two buckets (section 4.5).'));
-  add(bullet(B('Added value: '), 'after the regression, a metric whose effect points the wrong way adds nothing once the others are known and is dropped.'));
+  add(P('The pair test works like a quiz for the metric. Every repaid loan is paired with every defaulted loan, and for each pair we ask: does the metric point at the loan that defaulted? A metric that knows nothing is right in half of the pairs, like a coin flip; a perfect metric is right in all of them. The example below uses five loans and balance volatility, where a higher value should mean more risk.'));
+  add(table(['Loan', 'Outcome', 'Balance volatility'], [['A', 'repaid', '0.2'], ['B', 'repaid', '0.3'], ['C', 'repaid', '0.6'], ['X', 'defaulted', '0.5'], ['Y', 'defaulted', '0.8']]));
+  add(gap());
+  add(table(['Pair', 'Loan with the higher value', 'Metric is'], [['A – X', 'X', 'right'], ['A – Y', 'Y', 'right'], ['B – X', 'X', 'right'], ['B – Y', 'Y', 'right'], ['C – X', 'C', 'wrong'], ['C – Y', 'Y', 'right']]));
+  add(gap());
+  add(P(`The metric is right in 5 of the 6 pairs, or 83%. The strength rescales this share so that a coin flip gives 0 and a perfect metric gives 1: strength = 2 × (share of pairs right) − 1, here 2 × 0.83 − 1 = 0.67. This number is known as the Gini coefficient. A pair in which both loans have the same value counts as half right. On the real data the training set has ${int(S.train.n - S.train.n_bad)} repaid and ${S.train.n_bad} defaulted loans, so every metric is tested on ${int((S.train.n - S.train.n_bad) * S.train.n_bad)} pairs. The sign of the result also shows which direction is safe, so the direction is not assumed. The same test applied to the final score gives ${f2(S.train.gini)} on the training loans: the repaid loan has the higher score in ${pct((Number(S.train.gini) + 1) / 2, 0)} of pairs.`));
   add(H2('4.5 Buckets and points'));
-  add(P('Each kept metric is cut into buckets at the quartiles of its training values (two buckets for yes/no metrics). Neighbouring buckets are merged until the default rate rises or falls steadily. The points of a bucket come from its weight of evidence — the log of the share of repaid loans divided by the share of defaulted loans in that bucket — scaled so that the safest bucket earns 100 and the riskiest earns 0. A missing value is placed in the riskier bucket. The bucket limits are fixed numbers, so the points of a customer do not depend on who else is scored.'));
+  add(P('Each kept metric is cut into buckets at the quartiles of its training values (two buckets for yes/no metrics). Neighbouring buckets are merged until the default rate rises or falls steadily. Points are then given by rank: the bucket with the lowest default rate earns 100 points and the one with the highest earns 10, evenly spaced in between (100 / 70 / 40 / 10 for four buckets, 100 / 55 / 10 for three, 100 / 10 for two). A missing value is placed in the riskier bucket. The bucket limits are fixed numbers, so the points of a customer do not depend on who else is scored.'));
   add(H2('4.6 Weights'));
-  add(P(`A logistic regression predicts whether a loan defaulted from the points of the kept metrics, with a small penalty (L2 = ${P_.l2}) that keeps the weights stable when a metric separates the groups very sharply. Each metric's weight is the size of its coefficient, scaled so all weights add up to 100%. Because every metric's points use the same 0–100 scale, the weighted score ranks loans exactly as the regression does. A criterion's weight is the sum of its metrics' weights, so both levels come from the same calculation.`));
+  add(P('The weight of a metric is its strength divided by the total strength of the kept metrics, so a metric that separates repaid from defaulted loans better counts more, and all weights add up to 100%. The weight of a criterion is the sum of the weights of its metrics, so both levels come from the same calculation.'));
   add(H2('4.7 Short history'));
   add(P('Metrics measured over the 12-month window — overdraft events, balance volatility and loan payment ÷ income — are less reliable when few months were observed. Their points are pulled toward the training average in proportion to how little history there is:'));
   add(code('points = average + (points − average) × months ÷ (months + k)'));
   add(P(`k was chosen from 3, 6 and 12 as the value giving the best training Gini (k = ${P_.shrink_k}). A customer with only a short clean record cannot reach the full 100 points.`));
   add(H2('4.8 Score, grades and approval'));
-  add(code('score = Σ (weight × points)          range 0–100'));
+  add(code('score = Σ (weight × points)          higher = safer, maximum 100'));
   add(P(`The approve line is set on the training scores. Starting from the highest scores, each tenth of the loans is approved only while its own default rate stays below the average default rate (${pct(P_.portfolio_bad_rate)}). The approved range is split into thirds for grades A, B and C, and the rejected range in half for D and E.`));
   add(table(['Grade', 'Score', 'Decision'], [
     ['A', `≥ ${P_.grade_A.toFixed(2)}`, 'Approve'], ['B', `${P_.grade_B.toFixed(2)} – ${P_.grade_A.toFixed(2)}`, 'Approve'],
@@ -201,17 +206,17 @@ function build(d) {
   // 6
   add(H('6. The scorecard'));
   add(H2('6.1 Weights'));
-  const effect = (w) => Math.abs(Number(w.coef));
-  const effectTotal = d.weights.reduce((a, w) => a + effect(w), 0);
+  const strength = (w) => Number(w.strength);
+  const strengthTotal = d.weights.reduce((a, w) => a + strength(w), 0);
   const W = Object.fromEntries(d.weights.map((w) => [w.metric, Number(w.weight)]));
   const CW = Object.fromEntries(d.critw.map((c) => [c.criterion, Number(c.weight)]));
-  add(P('The weights come from the logistic regression described in section 4.6. The regression gives each metric an effect: how strongly its points move the prediction of a default. A metric with a larger effect gets a larger share of the score.'));
-  add(table(['Metric', 'Criterion', 'Effect in the regression', 'Weight'], [
-    ...d.weights.map((w) => [METRIC[w.metric], CRIT[w.criterion], effect(w).toFixed(2), pct(w.weight)]),
-    ['Total', '', effectTotal.toFixed(2), '100.0%'],
+  add(P('The weights follow from the strength of each kept metric (section 4.6). "Pairs right" is the share of repaid–defaulted pairs in which the metric points at the defaulted loan.'));
+  add(table(['Metric', 'Criterion', 'Pairs right', 'Strength', 'Weight'], [
+    ...d.weights.map((w) => [METRIC[w.metric], CRIT[w.criterion], pct((1 + strength(w)) / 2, 0), strength(w).toFixed(2), pct(w.weight)]),
+    ['Total', '', '', strengthTotal.toFixed(2), '100.0%'],
   ]));
   add(gap());
-  add(P(`Each weight is the effect of the metric divided by the total of all effects (${effectTotal.toFixed(2)}). The weight of a criterion is the sum of the weights of its metrics. For example, ${CRIT.income} (${pct(CW.income)}) is ${METRIC.dti.toLowerCase()} (${pct(W.dti)}) plus ${METRIC.income_sources.toLowerCase()} (${pct(W.income_sources)}). ${CRIT.demographics} has no kept metric, so its weight is 0%.`));
+  add(P(`Each weight is the strength of the metric divided by the total strength (${strengthTotal.toFixed(2)}). The weight of a criterion is the sum of the weights of its metrics. For example, ${CRIT.income} (${pct(CW.income)}) is ${METRIC.dti.toLowerCase()} (${pct(W.dti)}) plus ${METRIC.income_sources.toLowerCase()} (${pct(W.income_sources)}). ${CRIT.demographics} has no kept metric, so its weight is 0%.`));
   add(table(['Criterion', 'Weight'], d.critw.map((c) => [CRIT[c.criterion], pct(c.weight)])));
   add(gap());
   add(figure('weights.png', 'Figure 4. Weight of each kept metric in the score.', 520));
@@ -268,10 +273,10 @@ function build(d) {
   // 10
   add(H('10. Limitations'));
   add(bullet(`Few defaulted loans: ${nBad} in total and ${S.test.n_bad} in the test set. Test results show a direction, not precise rates.`));
-  add(bullet('One bank in one country in the 1990s. The method transfers to other data; the exact weights and thresholds would need to be learned again.'));
+  add(bullet('One bank in one country in the 1990s. The method transfers to other data; the exact weights and thresholds would need to be calculated again.'));
   add(bullet('No declared income: income is estimated from money coming into the account.'));
   add(bullet('Each account has at most one loan, so repayment of earlier loans cannot be measured. Overdrafts and penalty interest are the closest signal available.'));
-  add(bullet(`Joint account carries the ${rankWord} weight (${pct(jointW?.weight)}) and decides most of grade A, because none of the joint-account training loans defaulted. With more data this weight would likely shrink.`));
+  add(bullet(`Joint account carries the ${rankWord} weight (${pct(jointW?.weight)}) because none of the joint-account training loans defaulted. With more data this weight could change.`));
   add(bullet('The data has no date for when a second user joined an account, so joint-account status may have changed after the loan start date. It is the only kept metric that cannot be checked point in time.'));
   add(bullet(`Most test loans are still running (only ${d.finished.find((f) => f.view_name === 'finished_A_vs_B' && f.split === 'test')?.n ?? 0} have finished), so some may still default.`));
 

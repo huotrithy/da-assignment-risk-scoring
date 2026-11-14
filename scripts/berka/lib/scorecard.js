@@ -67,9 +67,9 @@ function rateOf(groups) {
   return groups.map((g) => g.bad / g.n);
 }
 
-// Bands (0..k-1, ordered by metric value) -> merged bands with monotonic bad rate and 0–100 points.
-// Points come from weight of evidence: ln(share of goods / share of bads), +0.5 smoothing,
-// scaled so the safest band = 100 and the riskiest = 0.
+// Bands (0..k-1, ordered by metric value) -> merged bands with monotonic bad rate and points by rank.
+// The safest band gets 100 and the riskiest 10, evenly spaced in between: 100/70/40/10 for four
+// bands, 100/55/10 for three, 100/10 for two.
 function bandPoints(bands, y) {
   const k = Math.max(...bands) + 1;
   let groups = Array.from({ length: k }, (_, b) => ({ members: [b], n: 0, bad: 0 }));
@@ -90,10 +90,9 @@ function bandPoints(bands, y) {
       }
     }
   }
-  const G = groups.reduce((s, g) => s + g.n - g.bad, 0), B = groups.reduce((s, g) => s + g.bad, 0);
-  const woe = groups.map((g) => Math.log(((g.n - g.bad + 0.5) / G) / ((g.bad + 0.5) / B)));
-  const lo = Math.min(...woe), hi = Math.max(...woe);
-  const points = woe.map((w) => (hi === lo ? 50 : Math.round((100 * (w - lo)) / (hi - lo) * 100) / 100));
+  const rate = rateOf(groups), n = groups.length;
+  const safestFirst = rate[0] <= rate[n - 1];
+  const points = groups.map((_, i) => (n === 1 ? 55 : Math.round(100 - (90 * (safestFirst ? i : n - 1 - i)) / (n - 1))));
   const mapBand = new Array(k).fill(null);
   groups.forEach((g, gi) => g.members.forEach((m) => { mapBand[m] = gi; }));
   return { points, badRate: rateOf(groups), n: groups.map((g) => g.n), mapBand };
@@ -102,32 +101,10 @@ function bandPoints(bands, y) {
 // Credibility weighting: few months observed -> points pulled toward the average.
 const shrink = (points, avg, months, k) => avg + ((points - avg) * months) / (months + k);
 
-// L2-regularised logistic regression by batch gradient descent. Deterministic (zero start).
-function fitLogistic(X, y, { l2 = 1.0, iters = 5000, lr = 0.5 } = {}) {
-  const n = X.length, p = X[0].length;
-  let b0 = 0;
-  const w = new Array(p).fill(0);
-  for (let it = 0; it < iters; it++) {
-    let g0 = 0;
-    const g = new Array(p).fill(0);
-    for (let i = 0; i < n; i++) {
-      let z = b0;
-      for (let j = 0; j < p; j++) z += w[j] * X[i][j];
-      const e = 1 / (1 + Math.exp(-z)) - y[i];
-      g0 += e;
-      for (let j = 0; j < p; j++) g[j] += e * X[i][j];
-    }
-    b0 -= (lr * g0) / n;
-    for (let j = 0; j < p; j++) w[j] -= lr * (g[j] / n + (l2 * w[j]) / n);
-  }
-  return { intercept: b0, coef: w };
-}
-
-// Weight of each metric = |coef| / sum of |coef|. All points share the 0-100 scale and every kept
-// coefficient is negative, so sum(weight x points) ranks loans exactly as the regression does.
-function weightsFromCoef(coef) {
-  const tot = coef.reduce((s, c) => s + Math.abs(c), 0);
-  return coef.map((c) => Math.abs(c) / tot);
+// Weight of each metric = its strength (|Gini| on the training loans) / the total strength.
+function weightsFromStrength(strength) {
+  const tot = strength.reduce((s, g) => s + Math.abs(g), 0);
+  return strength.map((g) => Math.abs(g) / tot);
 }
 
 const quantileDesc = (sortedDesc, q) => sortedDesc[Math.min(sortedDesc.length - 1, Math.max(0, Math.ceil(q * sortedDesc.length) - 1))];
@@ -166,4 +143,4 @@ function grade(score, c) {
   return 'E';
 }
 
-module.exports = { auc, gini, rankCorr, quantileCuts, assignBand, bandPoints, shrink, fitLogistic, weightsFromCoef, gradeCutoffs, grade };
+module.exports = { auc, gini, rankCorr, quantileCuts, assignBand, bandPoints, shrink, weightsFromStrength, gradeCutoffs, grade };

@@ -52,7 +52,7 @@ Loan status: A = finished, paid; B = finished, not paid; C = running, on time; D
 | `metric_evidence` | candidate metric | `fit_scorecard.js` | Gini, default rate per value group, kept/dropped and why |
 | `metric_correlation` | pair of metrics | `fit_scorecard.js` | Spearman rank correlation |
 | `scorecard_band` | metric × bucket | `fit_scorecard.js` | value range → points, default rate, training count |
-| `scorecard_weight` | kept metric | `fit_scorecard.js` | regression coefficient, weight, missing-value bucket |
+| `scorecard_weight` | kept metric | `fit_scorecard.js` | strength (Gini), weight, missing-value bucket |
 | `criterion_weight` | criterion | `fit_scorecard.js` | sum of its metrics' weights |
 | `scorecard_param` | setting | `fit_scorecard.js` | grade thresholds, approve line, shrinkage k, training Gini |
 | `loan_metric_points` | loan × kept metric | `20_score.sql` | raw value, bucket, points |

@@ -2,7 +2,7 @@
 // Usage: node scripts/berka/fit_scorecard.js   (needs berka.loan_features from 10_features.sql)
 //
 // Steps: evidence per candidate metric -> drop weak / duplicate metrics -> bands and points ->
-// short-history shrinkage -> logistic regression weights -> grade thresholds.
+// weights from metric strength -> short-history shrinkage -> grade thresholds.
 const { connect, runFile } = require('./lib/db');
 const sc = require('./lib/scorecard');
 
@@ -27,7 +27,6 @@ const CRITERIA = [...new Set(CANDIDATES.map((c) => c.criterion))];
 const MIN_GINI = 0.10;      // below this a metric barely separates repaid from defaulted
 const MAX_CORR = 0.5;       // |Spearman| at or above this = the two metrics measure the same thing
 const SHRINK_KS = [3, 6, 12];
-const L2 = 1.0;
 
 const num = (v) => (v === null || v === undefined ? null : Number(v));
 const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
@@ -68,13 +67,12 @@ function scoreRows(rows, metrics, k) {
   });
 }
 
+// Score the training loans: weight = share of the total strength (|Gini|) of the kept metrics.
 function fitWith(train, y, metrics, k) {
   const P = scoreRows(train, metrics, k);                    // [metric][row]
-  const X = train.map((_, i) => metrics.map((_, j) => P[j][i] / 100));
-  const model = sc.fitLogistic(X, y, { l2: L2 });
-  const weights = sc.weightsFromCoef(model.coef);
+  const weights = sc.weightsFromStrength(metrics.map((m) => m.gini));
   const scores = train.map((_, i) => metrics.reduce((s, _, j) => s + weights[j] * P[j][i], 0));
-  return { model, weights, scores, gini: -sc.gini(scores, y) };   // higher score = safer, so flip sign
+  return { weights, scores, gini: -sc.gini(scores, y) };     // higher score = safer, so flip sign
 }
 
 async function main() {
@@ -119,20 +117,11 @@ async function main() {
       metrics.push(Object.assign(e, b));
     }
 
-    // 5. Regression; a metric with a non-negative coefficient adds nothing once the others are known
-    let best;
-    for (;;) {
-      best = null;
-      for (const k of SHRINK_KS) {
-        const f = fitWith(train, y, metrics, k);
-        if (!best || f.gini > best.gini + 1e-9) best = { ...f, k };
-      }
-      const bad = best.model.coef.findIndex((c) => c >= 0);
-      if (bad < 0) break;
-      const e = metrics[bad];
-      e.verdict = 'dropped_no_added_value';
-      e.reason = 'regression coefficient points the wrong way once the other metrics are included: no added information';
-      metrics = metrics.filter((_, j) => j !== bad);
+    // 5. Weights from strength; the short-history constant k is the one with the best training Gini
+    let best = null;
+    for (const k of SHRINK_KS) {
+      const f = fitWith(train, y, metrics, k);
+      if (!best || f.gini > best.gini + 1e-9) best = { ...f, k };
     }
     for (const m of metrics) {
       const r = m.bands.map((b) => `${(100 * b.bad_rate).toFixed(0)}%`);
@@ -155,12 +144,12 @@ async function main() {
       for (const b of m.bands)
         await db.query('INSERT INTO berka.scorecard_band VALUES ($1,$2,$3,$4,$5,$6,$7)', [m.metric, b.band, b.lower, b.upper, b.points, r3(b.bad_rate), b.n_train]);
       await db.query('INSERT INTO berka.scorecard_weight VALUES ($1,$2,$3,$4,$5,$6)',
-        [m.metric, m.criterion, String(best.model.coef[j]), String(best.weights[j]), m.nullBand, m.window]);
+        [m.metric, m.criterion, r3(Math.abs(m.gini)), String(best.weights[j]), m.nullBand, m.window]);
     }
     for (const c of CRITERIA)
       await db.query('INSERT INTO berka.criterion_weight VALUES ($1,$2)', [c, String(metrics.reduce((s, m, j) => s + (m.criterion === c ? best.weights[j] : 0), 0))]);
     const params = { shrink_k: best.k, approve_cutoff: cut.approve, grade_A: cut.A, grade_B: cut.B, grade_C: cut.C, grade_D: cut.D,
-      l2: L2, train_gini: best.gini, portfolio_bad_rate: pbr, n_train: train.length, n_train_bad: y.reduce((s, v) => s + v, 0) };
+      train_gini: best.gini, portfolio_bad_rate: pbr, n_train: train.length, n_train_bad: y.reduce((s, v) => s + v, 0) };
     // grades the fit assigns on train; score_check.sql verifies SQL reproduces them exactly
     for (const g of ['A', 'B', 'C', 'D', 'E']) params[`n_train_grade_${g}`] = best.scores.filter((v) => sc.grade(v, cut) === g).length;
     for (const [n, v] of Object.entries(params)) await db.query('INSERT INTO berka.scorecard_param VALUES ($1,$2)', [n, String(v)]);
@@ -170,7 +159,7 @@ async function main() {
     console.log('Evidence:');
     console.table(ev.map((e) => ({ metric: e.metric, gini: r3(e.gini), verdict: e.verdict })));
     console.log('Kept metrics:');
-    console.table(metrics.map((m, j) => ({ metric: m.metric, criterion: m.criterion, coef: +best.model.coef[j].toFixed(3), weight: +(100 * best.weights[j]).toFixed(1), bands: m.bands.map((b) => b.points).join('/') })));
+    console.table(metrics.map((m, j) => ({ metric: m.metric, criterion: m.criterion, strength: r3(Math.abs(m.gini)), weight: +(100 * best.weights[j]).toFixed(1), bands: m.bands.map((b) => b.points).join('/') })));
     console.log('shrink k', best.k, '| train Gini', best.gini.toFixed(3), '| thresholds', JSON.stringify(Object.fromEntries(Object.entries(cut).map(([k, v]) => [k, +v.toFixed(2)]))));
   } catch (e) {
     await db.query('ROLLBACK').catch(() => {});

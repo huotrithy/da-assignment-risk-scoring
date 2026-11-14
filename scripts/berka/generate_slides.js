@@ -206,7 +206,7 @@ async function main() {
     ], 0.9, 2.2, 4.5, 1.35, RED);
     panel(s, 5.9, 1.55, 6.8, 5.0, GREEN, 'Goal');
     iconRows(s, [
-      ['target', 'Score every applicant the same way', 'A score from 0 to 100 and a risk grade A–E'],
+      ['target', 'Score every applicant the same way', 'A score out of 100 and a risk grade A–E'],
       ['bank', 'Use only the data the bank already has', 'Accounts and transactions — no credit bureau'],
       ['refresh', 'Score in two ways', 'When an application arrives, and as a batch scan to make loan offers'],
       ['eye', 'Keep it explainable', 'Every metric, point and weight is visible'],
@@ -231,7 +231,7 @@ async function main() {
       { x: 0.6, y: 1.45, w: 12.1, h: 0.8, fontFace: FONT, fontSize: 24, bold: true, color: BLUE, valign: 'middle' });
     const cards = [
       ['search', '1 · Prove', 'Past loans, outcome known', `On the ${S.train.n} earliest loans we know who repaid and who defaulted. We test every metric against that outcome and keep only the ones that matter.`, BLUE],
-      ['calc', '2 · Score', 'Any loan', 'The proven metrics give points, the points give a score from 0 to 100, and the score gives a grade and a decision.', NAVY],
+      ['calc', '2 · Score', 'Any loan', 'The proven metrics give points, the points give a score out of 100, and the score gives a grade and a decision.', NAVY],
       ['flask', '3 · Check', 'Newer loans, not used before', `We score the ${S.test.n} latest loans and compare with what really happened: ${pct(S.test.bad_rate_approved)} of the approved loans defaulted, ${pct(S.test.bad_rate_rejected, 0)} of the rejected.`, GREEN],
     ];
     cards.forEach(([ic, head, sub, text, color], i) => {
@@ -253,8 +253,8 @@ async function main() {
     table(s, ['', 'Previous version', 'New version'], [
       [{ text: 'Data', bold: true }, 'UCI German Credit + generated customers', `Berka: ${int(d.counts.loans)} real loans with known outcome`],
       [{ text: 'Metrics', bold: true }, '12, chosen by judgement', `${d.evidence.length} tested, ${kept.length} kept by evidence`],
-      [{ text: 'Weights', bold: true }, '35 / 25 / 20 / 10 / 10 (judgement)', 'Learned by logistic regression, per metric'],
-      [{ text: 'Points', bold: true }, '100 / 70 / 40 / 10 by rank', "From each bucket's real default rate"],
+      [{ text: 'Weights', bold: true }, '35 / 25 / 20 / 10 / 10 (judgement)', 'From the measured strength of each metric'],
+      [{ text: 'Points', bold: true }, '100 / 70 / 40 / 10 by rank', 'Same rank points; real default rates decide which end is safe'],
       [{ text: 'Thresholds', bold: true }, 'Judgement', 'Approve only where the default rate is below average'],
       [{ text: 'Proof', bold: true }, 'Not possible: no real outcome', 'Train / test split, Gini, default rate by grade'],
     ], 0.6, 1.55, 12.1, [2.0, 5.0, 5.1], { size: 15, rowH: 0.6 });
@@ -266,7 +266,7 @@ async function main() {
     const wb = W_.balance_volatility, wt = W_.balance_trend, wd = W_.dti, wi = W_.income_sources;
     table(s, ['#', 'Question raised', 'Answer', 'Slide'], [
       ['1', 'Why these metrics? Any proof?', `Tested on ${int(d.counts.loans)} real loans; ${kept.length} of ${d.evidence.length} kept`, String(slideNo('strength'))],
-      ['2', 'Why 35% payment, 25% income …?', 'Weights learned by logistic regression', String(slideNo('weights'))],
+      ['2', 'Why 35% payment, 25% income …?', 'Weight = the measured strength of each metric on real loans', String(slideNo('weights'))],
       ['3', 'Short history biases on-time / delinquency', 'Averaged over months actually seen; pulled toward average when history is short', String(slideNo('history'))],
       ['4', 'Spend-to-income and balance trend overlap', 'Duplicate metrics removed', String(slideNo('duplicates'))],
       ['5', 'Metrics inside a criterion should have own weights',
@@ -285,9 +285,9 @@ async function main() {
       [{ text: 'Overdraft', bold: true }, 'The account spends more than it holds, so the balance drops below zero (e.g. −2,000)'],
       [{ text: 'Criterion', bold: true }, 'A group of related metrics, e.g. Balance behaviour. There are 5 criteria.'],
       [{ text: 'Metric', bold: true }, 'One number measured for each loan, e.g. balance volatility'],
-      [{ text: 'Bucket → points', bold: true }, 'A value range of a metric gets 0–100 points; 100 = the bucket with the lowest default rate'],
-      [{ text: 'Weight', bold: true }, 'How much a metric counts in the score; learned from the data, all weights add up to 100%'],
-      [{ text: 'Gini', bold: true }, `How well a metric or the score separates repaid from defaulted loans: 0 = coin flip, 1 = perfect (slide ${slideNo('gini')})`],
+      [{ text: 'Bucket → points', bold: true }, 'A value range of a metric. Points by rank: 100 for the bucket with the lowest default rate, 10 for the highest'],
+      [{ text: 'Weight', bold: true }, 'How much a metric counts in the score; a stronger metric counts more, all weights add up to 100%'],
+      [{ text: 'Gini', bold: true }, `The strength of a metric or of the score: how often it tells a defaulted loan from a repaid one. 0 = coin flip, 1 = perfect (slide ${slideNo('gini')})`],
       [{ text: 'Train / test', bold: true }, 'The older 70% of loans build the scorecard; the newer 30% are kept back to check it'],
     ], 0.6, 1.45, 12.1, [2.4, 9.7], { size: 14, rowH: 0.48 });
     s.addNotes(tx('A short glossary so the rest of the slides read easily. "Defaulted" covers both loans that ended unpaid and running loans already behind on payments.'));
@@ -414,10 +414,10 @@ async function main() {
     const s = content('2 · Workflow', 'Our method, step by step');
     const steps = [
       ['bars', 'Measure', `For every loan, calculate ${d.evidence.length} candidate metrics from the 12 months before it`, 'candidates'],
-      ['search', 'Test each metric', 'Do loans with a high value default more often than loans with a low value? If not, drop the metric', 'strength'],
+      ['search', 'Test each metric', 'Can the metric tell a defaulted loan from a repaid one? Measure its strength; if weak, drop it', 'gini'],
       ['copy', 'Remove duplicates', 'When two metrics move together, keep only the stronger one', 'duplicates'],
-      ['layers', 'Give points', 'Split each metric into buckets. A bucket with fewer defaults gets more points (0–100)', 'points'],
-      ['scale', 'Learn weights', 'A regression finds how much each metric matters. The weights add up to 100%', 'weights'],
+      ['layers', 'Give points', 'Split each metric into buckets. Points by rank: the safest bucket gets 100, the riskiest 10', 'points'],
+      ['scale', 'Set weights', 'A stronger metric counts more: weight = its strength ÷ the total strength', 'weights'],
       ['flask', 'Score and check', 'Score = sum of weight × points. Set the approve line, then check on loans not used so far', 'results'],
     ];
     steps.forEach(([ic, head, text, target], i) => {
@@ -448,31 +448,32 @@ async function main() {
   };
 
   builders.gini = () => {
-    const s = content('4 · Evidence', 'What is Gini? How well loans are separated');
-    // 10 loans each, ordered by score (low -> high); D = defaulted, R = repaid. 3 defaulted, 7 repaid per row.
-    const rows = [
-      ['Gini ≈ 0 · mixed (coin flip)', 'RDRRRDRRDR'],
-      ['Gini ≈ 0.6 · mostly separated', 'DRDRRDRRRR'],
-      ['Gini = 1 · perfect', 'DDDRRRRRRR'],
-    ];
-    rows.forEach(([label, pat], r) => {
-      const y = 1.75 + r * 1.2;
-      s.addText(tx(label), { x: 0.6, y, w: 6.8, h: 0.35, fontFace: FONT, fontSize: 14, bold: true, color: NAVY });
-      [...pat].forEach((c, i) => s.addShape(pptx.ShapeType.ellipse, { x: 0.7 + i * 0.66, y: y + 0.42, w: 0.42, h: 0.42, fill: { color: c === 'D' ? RED : GREEN }, line: { color: 'FFFFFF' } }));
-    });
-    s.addShape(pptx.ShapeType.line, { x: 0.7, y: 5.45, w: 6.4, h: 0, line: { color: '8C8C8C', width: 1.5, endArrowType: 'triangle' } });
-    s.addText(tx('lower score  →  higher score'), { x: 0.7, y: 5.5, w: 6.4, h: 0.3, fontFace: FONT, fontSize: 12, color: MUTED, align: 'center' });
-    s.addShape(pptx.ShapeType.ellipse, { x: 0.7, y: 6.0, w: 0.25, h: 0.25, fill: { color: GREEN }, line: { color: GREEN } });
-    s.addText(tx('repaid'), { x: 1.0, y: 5.93, w: 1.2, h: 0.38, fontFace: FONT, fontSize: 12, color: INK });
-    s.addShape(pptx.ShapeType.ellipse, { x: 2.1, y: 6.0, w: 0.25, h: 0.25, fill: { color: RED }, line: { color: RED } });
-    s.addText(tx('defaulted'), { x: 2.4, y: 5.93, w: 1.5, h: 0.38, fontFace: FONT, fontSize: 12, color: INK });
-    panel(s, 7.6, 1.55, 5.1, 5.1, BLUE, 'How to read it', [
-      'Take one repaid and one defaulted loan at random. Does the repaid loan get the higher score?',
-      'Right half of the time = coin flip (Gini 0). Right every time = Gini 1',
-      { text: `Our score is right for ${pct(share(S.train.gini), 0)} of pairs on the training loans (Gini ${f2(S.train.gini)}) and ${pct(share(S.test.gini), 0)} on the test loans (Gini ${f2(S.test.gini)})`, bold: true },
-      'A metric with a Gini below 0.10 is dropped as weak',
-    ], { size: 16 });
-    s.addNotes(tx('Gini is one number for how well a metric, or the final score, separates repaid from defaulted loans. It is the standard measure for credit scorecards. Formula: 2 × (share of pairs ranked right) − 1.'));
+    const s = content('4 · Evidence', 'The pair test: how strong is a metric?');
+    s.addText(tx('A quiz for the metric: we show it one repaid loan and one defaulted loan. Can it tell which one defaulted?'),
+      { x: 0.6, y: 1.4, w: 12.1, h: 0.5, fontFace: FONT, fontSize: 18, bold: true, color: BLUE });
+    const lab = (t, x, w) => s.addText(tx(t), { x, y: 2.0, w, h: 0.3, fontFace: FONT, fontSize: 12, bold: true, color: MUTED, charSpacing: 1 });
+    // Worked example: 5 loans, metric = balance volatility (higher should mean riskier).
+    const rep = { text: 'repaid', color: GREEN, bold: true }, def = { text: 'defaulted', color: RED, bold: true };
+    lab('EXAMPLE: 5 LOANS', 0.6, 3.6);
+    table(s, ['Loan', 'Outcome', 'Balance volatility'], [['A', rep, '0.2'], ['B', rep, '0.3'], ['C', rep, '0.6'], ['X', def, '0.5'], ['Y', def, '0.8']],
+      0.6, 2.35, 3.6, [0.8, 1.3, 1.5], { size: 14, rowH: 0.42 });
+    const ok = { text: 'right', color: GREEN, bold: true }, no = { text: 'wrong', color: RED, bold: true };
+    lab('EVERY REPAID × DEFAULTED PAIR', 4.5, 3.7);
+    table(s, ['Pair', 'Higher value', 'Metric is'], [['A – X', 'X', ok], ['A – Y', 'Y', ok], ['B – X', 'X', ok], ['B – Y', 'Y', ok], ['C – X', 'C', no], ['C – Y', 'Y', ok]],
+      4.5, 2.35, 3.7, [1.1, 1.4, 1.2], { size: 14, rowH: 0.42 });
+    s.addText(tx('5 of 6 pairs right = 83%'), { x: 4.5, y: 5.4, w: 3.7, h: 0.4, fontFace: FONT, fontSize: 16, bold: true, color: NAVY });
+    s.addText(tx('The metric is right when the defaulted loan has the riskier value.'), { x: 0.6, y: 5.0, w: 3.6, h: 0.8, fontFace: FONT, fontSize: 13, color: INK, valign: 'top' });
+    const nGood = Number(S.train.n) - Number(S.train.n_bad);
+    panel(s, 8.5, 2.0, 4.2, 4.65, BLUE, 'Formula', [
+      { text: 'Strength = 2 × share of pairs right − 1', bold: true },
+      'Example: 2 × 0.83 − 1 = 0.67',
+      '50% right = coin flip → strength 0',
+      '100% right = perfect → strength 1',
+      `On the real data: ${nGood} repaid × ${S.train.n_bad} defaulted training loans = ${int(nGood * Number(S.train.n_bad))} pairs for every metric`,
+      'Strength below 0.10 → the metric is dropped as weak',
+    ], { size: 14 });
+    note(s, 'This strength is known as the Gini coefficient. Pairs with the same value count as half right. Only the training loans are used.');
+    s.addNotes(tx(`Step 2 of the method. To measure how strong a metric is, we pair every repaid loan with every defaulted loan and count how often the metric points at the defaulted one. A coin flip is right half of the time; a perfect metric is right every time. The formula only rescales that share so a coin flip is 0 and perfect is 1. The same test on our final score gives ${f2(S.train.gini)} on the training loans and ${f2(S.test.gini)} on the test loans.`));
   };
 
   builders.strength = () => {
@@ -480,7 +481,7 @@ async function main() {
     image(s, 'metric_strength.png', 0.5, 1.45, 7.8, 5.2);
     const weak = d.evidence.filter((e) => e.verdict === 'dropped_weak').map((e) => METRIC[e.metric].toLowerCase());
     panel(s, 8.6, 1.55, 4.1, 5.05, BLUE, 'How to read', [
-      'Longer bar = the metric separates repaid from defaulted loans better (Gini)',
+      'Longer bar = the metric wins the pair test more often (strength, Gini)',
       { text: `Strongest: balance volatility (${f2(ev.balance_volatility.gini_train)})`, bold: true },
       `Below 0.10 → dropped as weak: ${weak.join(', ')}`,
       'Grey bars above 0.10 are duplicates (slide ' + slideNo('duplicates') + ')',
@@ -582,7 +583,7 @@ async function main() {
   };
 
   builders.points = () => {
-    const s = content('5 · Scorecard', "Points: from each bucket's real default rate");
+    const s = content('5 · Scorecard', 'Points: by rank, as in the previous version');
     const byMetric = {};
     for (const b of d.bands) (byMetric[b.metric] ??= []).push(b);
     const metrics = d.weights.map((w) => w.metric);
@@ -601,23 +602,24 @@ async function main() {
           { x, y: y + 0.05, w: cw, h: rowH - 0.18, fontFace: FONT, color: col === 'F9A825' ? NAVY : 'FFFFFF', align: 'center', valign: 'middle' });
       });
     });
-    note(s, 'Safest bucket = 100, riskiest = 0, from the share of repaid ÷ the share of defaulted loans in the bucket. Buckets with similar risk were merged.');
-    s.addNotes(tx('Step 4 of the method. Points are no longer 100/70/40/10 by rank. Each bucket gets points from how many of its loans really defaulted. The bucket limits are fixed, so a score does not depend on who else is scored.'));
+    note(s, 'Safest bucket = 100, riskiest = 10, evenly spaced in between (100 / 70 / 40 / 10 for four buckets). Neighbouring groups whose default rates were out of order were merged.');
+    s.addNotes(tx('Step 4 of the method. Points work as in the previous version: by rank, from 100 for the safest bucket down to 10. What is new is that the real default rates decide which end of a metric is the safe one. The bucket limits are fixed, so a score does not depend on who else is scored.'));
   };
 
   builders.weights = () => {
-    const s = content('5 · Scorecard', 'Weights learned from the data');
+    const s = content('5 · Scorecard', 'Weights: a stronger metric counts more');
     image(s, 'weights.png', 0.5, 1.45, 6.2, 2.95);
-    const effect = (w) => Math.abs(Number(w.coef));
-    const total = d.weights.reduce((a, w) => a + effect(w), 0);
-    table(s, ['Metric', 'Effect in the model', 'Weight = effect ÷ total'], [
-      ...d.weights.map((w) => [METRIC[w.metric], effect(w).toFixed(2), { text: pct(w.weight), bold: true }]),
-      [{ text: 'Total', bold: true }, { text: total.toFixed(2), bold: true }, { text: '100%', bold: true }],
-    ], 6.9, 1.5, 5.8, [2.9, 1.4, 1.5], { size: 12, rowH: 0.36 });
+    const str = (w) => Number(w.strength);
+    const total = d.weights.reduce((a, w) => a + str(w), 0);
+    table(s, ['Metric', 'Pairs right', 'Strength', 'Weight'], [
+      ...d.weights.map((w) => [METRIC[w.metric], pct(share(str(w)), 0), f2(str(w)), { text: pct(w.weight), bold: true }]),
+      [{ text: 'Total', bold: true }, '', { text: total.toFixed(2), bold: true }, { text: '100%', bold: true }],
+    ], 6.9, 1.5, 5.8, [2.7, 1.1, 1.0, 1.0], { size: 12, rowH: 0.36 });
+    const top = d.weights[0];
     panel(s, 0.6, 4.6, 6.1, 2.05, BLUE, 'How a weight is found', [
-      'A logistic regression predicts "defaulted" from the points of the kept metrics (training loans)',
-      'It gives each metric an effect: how strongly its points move the prediction',
-      'Weight = effect ÷ total of all effects',
+      `Strength = the result of the pair test on the training loans (slide ${slideNo('gini')})`,
+      'Weight = strength ÷ total strength of the kept metrics',
+      { text: `${METRIC[top.metric]}: ${f2(str(top))} ÷ ${total.toFixed(2)} = ${pct(top.weight)}`, bold: true },
     ], { size: 13 });
     const parts = (c) => d.weights.filter((w) => w.criterion === c).map((w) => `${METRIC[w.metric].toLowerCase()} ${pct(w.weight)}`).join(' + ');
     panel(s, 6.9, 4.6, 5.8, 2.05, GREEN, 'A criterion = the sum of its metrics', [
@@ -625,12 +627,12 @@ async function main() {
       `${CRIT.balance} ${pct(CW.balance)} = ${parts('balance')}`,
       `${CRIT.payment} ${pct(CW.payment)} and ${CRIT.relationship.toLowerCase()} ${pct(CW.relationship)} have one metric each; demographics 0%`,
     ], { size: 13 });
-    s.addNotes(tx('Step 5, and the answer to questions 2 and 5. Nobody chose these numbers: the regression measures how much each metric matters, and a criterion is just the sum of its metrics. Demographics ends at 0% because age and district did not predict default.'));
+    s.addNotes(tx('Step 5, and the answer to questions 2 and 5. Nobody chose these numbers: each weight is the share of the metric in the total strength measured on real loans, and a criterion is the sum of its metrics. Demographics ends at 0% because age and district did not pass the pair test.'));
   };
 
   builders.score = () => {
-    const s = content('5 · Scorecard', 'Score 0–100 and the approve line');
-    code(s, 'score = Σ (weight × points)          0 = riskiest · 100 = safest', 0.6, 1.55, 12.1, 0.75, 18);
+    const s = content('5 · Scorecard', 'Score and the approve line');
+    code(s, 'score = Σ (weight × points)          higher = safer · maximum 100', 0.6, 1.55, 12.1, 0.75, 18);
     panel(s, 0.6, 2.55, 6.3, 3.0, GREEN, 'Approve line from the data', [
       'Sort training loans by score, highest first',
       `Approve each tenth only while its real default rate is below the average (${pct(P.portfolio_bad_rate)})`,
@@ -643,7 +645,7 @@ async function main() {
       ['D', `${P.grade_D.toFixed(1)} – ${P.grade_C.toFixed(1)}`, { text: 'Reject', color: RED, bold: true }],
       ['E', `< ${P.grade_D.toFixed(1)}`, { text: 'Reject', color: RED, bold: true }],
     ], 7.2, 2.55, 5.5, [1.2, 2.5, 1.8], { size: 16, rowH: 0.6 });
-    s.addNotes(tx('The score is the weighted sum of points, from 0 to 100. The approve line is where the real default rate stops being below average.'));
+    s.addNotes(tx('The score is the weighted sum of points; the maximum is 100. The approve line is where the real default rate stops being below average.'));
   };
 
   builders.history = () => {
@@ -689,7 +691,7 @@ async function main() {
     s.addText(tx(`Really: status ${sa.status} — ${STATUS[sa.status].toLowerCase()}`), { x: 9.9, y: 3.4, w: 2.8, h: 0.6, fontFace: FONT, fontSize: 13, color: INK, align: 'center' });
     const se = e.score;
     panel(s, 0.6, 5.0, 12.1, 1.6, RED, `Opposite end — loan ${se.loan_id}: score ${Number(se.score).toFixed(1)}, grade ${se.grade}, ${se.approved ? 'approve' : 'reject'}`, [
-      `${e.points.filter((p) => Number(p.band_points) === 0).map((p) => METRIC[p.metric]).join(', ')} all in the riskiest bucket. Really: status ${se.status} — ${STATUS[se.status].toLowerCase()}.`,
+      `${e.points.filter((p) => Number(p.band_points) === 10).map((p) => METRIC[p.metric]).join(', ')} all in the riskiest bucket. Really: status ${se.status} — ${STATUS[se.status].toLowerCase()}.`,
     ], { size: 14 });
     s.addNotes(tx('Walk through the top loan: each metric value, its points, its weight, and the sum. Then the lowest-scored loan, which really did default.'));
   };
@@ -698,13 +700,13 @@ async function main() {
     const s = content('6 · Results', 'What drives each grade');
     image(s, 'criteria_by_grade.png', 0.5, 1.45, 7.6, 3.4);
     panel(s, 8.4, 1.55, 4.3, 5.05, ORANGE, 'How to read it', [
-      'Almost no one in A–D has an overdraft, so grade A is decided mostly by joint account',
-      `None of the ${d.bands.find((b) => b.metric === 'joint_account' && b.lower !== null)?.n_train ?? ''} joint accounts in training defaulted (weight ${pct(W_.joint_account, 0)})`,
-      'Balance behaviour separates C from D and E; overdrafts mark out grade E',
-      'Caveat: the data has no date for when the second user joined. With more data this weight would likely shrink',
+      `Balance behaviour has the largest weight (${pct(CW.balance, 0)}) and its points fall steadily from A to E`,
+      `None of the ${d.bands.find((b) => b.metric === 'joint_account' && b.lower !== null)?.n_train ?? ''} joint accounts in training defaulted, so they are most common in grade A (weight ${pct(W_.joint_account, 0)})`,
+      'Almost no one in A–D has an overdraft; overdrafts mark out grade E',
+      'Caveat: the data has no date for when the second user joined an account',
     ], { size: 14 });
     panel(s, 0.6, 5.1, 7.5, 1.5, BLUE, null, ['Each cell = average criterion points (0–100) of loans in that grade. Demographics is not shown: it has no kept metric.'], { size: 13 });
-    s.addNotes(tx('Pre-empt the obvious question. The data really does say joint accounts are the safest group; we state it as a limitation rather than hide it.'));
+    s.addNotes(tx('What separates the grades. Balance behaviour does most of the work. Joint accounts are the safest group in the data; we state the missing join date as a limitation rather than hide it.'));
   };
 
   builders.dashboard = () => {

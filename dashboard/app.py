@@ -45,7 +45,6 @@ VERDICT_LABEL = {
     "kept": "Kept",
     "dropped_weak": "Dropped: weak",
     "dropped_duplicate": "Dropped: duplicate",
-    "dropped_no_added_value": "Dropped: no added value",
 }
 
 # Colour = decision (validated colour-blind-safe pair); grade letters are always labelled.
@@ -327,15 +326,15 @@ with tab_ev:
                     width="stretch")
 
     st.subheader("4 · Weights learned from the data")
-    st.caption(f"Logistic regression of 'defaulted' on each kept metric's points (training loans, L2 = {P['l2']:.0f}). "
-               "Weight = size of the metric's regression coefficient, scaled so all weights add up to 100%. All points share the same 0–100 scale, so the score ranks loans exactly as the regression does.")
+    st.caption("Strength = Gini of the metric on the training loans (how often it tells a defaulted loan from a repaid one). "
+               "Weight = strength ÷ total strength of the kept metrics, so all weights add up to 100%.")
     w = data["weights"].copy()
     w["Metric"], w["Criterion"] = w["metric"].map(METRIC_LABEL), w["criterion"].map(CRITERIA)
     wl, wr = st.columns([3, 2])
     with wl:
         wb = alt.Chart(w).mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, size=18, color=APPROVE_COLOR).encode(
             y=alt.Y("Metric:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260)), x=alt.X("weight:Q", title="Weight in score", axis=alt.Axis(format="%")),
-            tooltip=["Metric:N", "Criterion:N", alt.Tooltip("weight:Q", format=".1%"), alt.Tooltip("coef:Q", title="Coefficient", format=".2f")])
+            tooltip=["Metric:N", "Criterion:N", alt.Tooltip("weight:Q", format=".1%"), alt.Tooltip("strength:Q", title="Strength (Gini)", format=".2f")])
         st.altair_chart((wb + wb.mark_text(align="left", dx=4).encode(text=alt.Text("weight:Q", format=".0%"), color=alt.value("#3d3d3a")))
                         .properties(height=240), width="stretch")
     with wr:

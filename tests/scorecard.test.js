@@ -38,10 +38,10 @@ test('assignBand puts values above the last cut in the top band', () => {
   assert.equal(sc.assignBand(1, [1, 5]), 0);
 });
 
-test('bandPoints gives the safest band 100 and the riskiest 0', () => {
+test('bandPoints gives the safest band 100 and the riskiest 10', () => {
   const r = sc.bandPoints([0, 0, 1, 1, 2, 2], [0, 0, 0, 1, 1, 1]);
   assert.equal(r.points[0], 100);
-  assert.equal(r.points[r.points.length - 1], 0);
+  assert.equal(r.points[r.points.length - 1], 10);
   for (let i = 1; i < r.badRate.length; i++) assert.ok(r.badRate[i] >= r.badRate[i - 1]);
 });
 
@@ -64,26 +64,17 @@ test('shrink pulls short histories toward the average', () => {
   close(sc.shrink(100, 60, 1e9, 6), 100, 1e-4);
 });
 
-test('fitLogistic stays finite on a perfectly separating column', () => {
-  const m = sc.fitLogistic([[1], [1], [0], [0]], [0, 0, 1, 1], { l2: 1 });
-  assert.ok(Number.isFinite(m.intercept) && m.coef.every(Number.isFinite));
-  assert.ok(m.coef[0] < 0);
+test('bandPoints ranks four bands 100/70/40/10, in either direction', () => {
+  const bands = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3];
+  const up = [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1];
+  assert.deepEqual(sc.bandPoints(bands, up).points, [100, 70, 40, 10]);
+  assert.deepEqual(sc.bandPoints(bands, up.slice().reverse()).points, [10, 40, 70, 100]);
 });
 
-test('weightsFromCoef normalises |coef| to 1', () => {
-  const w = sc.weightsFromCoef([-2, 1]);
+test('weightsFromStrength gives each metric its share of the total strength', () => {
+  const w = sc.weightsFromStrength([-0.4, 0.2]);
   close(w[0], 2 / 3);
   close(w[1], 1 / 3);
-});
-
-test('weighted score ranks loans the same way as the regression', () => {
-  // metric 0 has a big coefficient but small spread; the score must still follow the model
-  const coef = [-3, -1];
-  const w = sc.weightsFromCoef(coef, [0.1, 1]);
-  const a = [1, 0], b = [0, 1];                         // points/100 of two loans
-  const lin = (p) => coef[0] * p[0] + coef[1] * p[1];   // lower = safer
-  const score = (p) => w[0] * p[0] + w[1] * p[1];       // higher = safer
-  assert.equal(lin(a) < lin(b), score(a) > score(b));
 });
 
 test('gradeCutoffs approves only above-average-safety scores and orders grades', () => {
