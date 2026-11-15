@@ -47,7 +47,7 @@ const gap = () => new Paragraph({ text: '', spacing: { after: 120 } });
 // A block of SQL: one shaded paragraph per line. Not passed through t(): SQL keeps the real column names (band, NULL).
 const sql = (text) => [...text.trim().split('\n').map((line) => new Paragraph({
   spacing: { after: 0 }, shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'F3F3F3' },
-  children: [new TextRun({ text: line.replace(/ /g, ' ') || ' ', font: 'Consolas', size: 16 })],
+  children: [new TextRun({ text: line.replace(/ /g, ' ') || ' ', font: 'Consolas', size: 14 })],
 })), gap()];
 
 // How each candidate metric is calculated (scripts/berka/10_features.sql), over the 12 months before the loan.
@@ -72,91 +72,86 @@ const BY_CRIT = {
   balance: ['balance_volatility', 'min_balance', 'balance_trend', 'spend_to_income'],
   relationship: ['joint_account', 'history_months', 'has_card'], demographics: ['age_at_loan', 'district_unemployment'],
 };
-const SCHEMA = [
-  ['district', 'district_id (PK), name, region, inhabitants, avg_salary, unemployment_95, unemployment_96, entrepreneurs_per_1000, crimes_95, crimes_96'],
-  ['account', 'account_id (PK), district_id (FK), frequency, open_date'],
-  ['client', 'client_id (PK), birth_date, gender, district_id (FK)'],
-  ['disposition', 'disp_id (PK), client_id (FK), account_id (FK), type (OWNER / DISPONENT)'],
-  ['card', 'card_id (PK), disp_id (FK), type, issued_date'],
-  ['loan', 'loan_id (PK), account_id (FK, unique), loan_date, amount, duration_months, monthly_payment, status, is_bad'],
-  ['trans', 'trans_id (PK), account_id (FK), trans_date, type, operation, amount, balance, k_symbol, bank, partner_account'],
-  ['standing_order', 'order_id (PK), account_id (FK), bank_to, account_to, amount, k_symbol'],
+const REPO_URL = 'https://github.com/huotrithy/da-assignment-risk-scoring';
+// Source tables (scripts/berka/00_schema.sql): [column, type, description].
+const SCHEMA = {
+  district: ['One row per region (77 rows).', [
+    ['district_id', 'INT, PK', 'District number'],
+    ['name', 'TEXT', 'District name'],
+    ['region', 'TEXT', 'Region the district belongs to'],
+    ['inhabitants', 'INT', 'Number of inhabitants'],
+    ['avg_salary', 'NUMERIC', 'Average salary'],
+    ['unemployment_95', 'NUMERIC', 'Unemployment rate in 1995 (missing for one district)'],
+    ['unemployment_96', 'NUMERIC', 'Unemployment rate in 1996'],
+    ['entrepreneurs_per_1000', 'INT', 'Entrepreneurs per 1,000 inhabitants'],
+    ['crimes_95', 'INT', 'Crimes committed in 1995 (missing for one district)'],
+    ['crimes_96', 'INT', 'Crimes committed in 1996'],
+  ]],
+  account: ['One row per bank account (4,500 rows).', [
+    ['account_id', 'INT, PK', 'Account number'],
+    ['district_id', 'INT, FK → district', 'District of the branch'],
+    ['frequency', 'TEXT', 'How often statements are issued: monthly, weekly or after_transaction'],
+    ['open_date', 'DATE', 'Date the account was opened'],
+  ]],
+  client: ['One row per person (5,369 rows).', [
+    ['client_id', 'INT, PK', 'Client number'],
+    ['birth_date', 'DATE', 'Birth date, decoded from the birth number'],
+    ['gender', 'CHAR(1)', 'M or F, decoded from the birth number; never used for scoring'],
+    ['district_id', 'INT, FK → district', 'District where the client lives'],
+  ]],
+  disposition: ['One row per right of a client on an account (5,369 rows).', [
+    ['disp_id', 'INT, PK', 'Disposition number'],
+    ['client_id', 'INT, FK → client', 'The client'],
+    ['account_id', 'INT, FK → account', 'The account'],
+    ['type', 'TEXT', 'OWNER, or DISPONENT for a second user. Only the owner can take a loan'],
+  ]],
+  card: ['One row per card (892 rows).', [
+    ['card_id', 'INT, PK', 'Card number'],
+    ['disp_id', 'INT, FK → disposition', 'The disposition the card was issued to'],
+    ['type', 'TEXT', 'junior, classic or gold'],
+    ['issued_date', 'DATE', 'Date the card was issued'],
+  ]],
+  loan: ['One row per loan (682 rows); an account has at most one loan.', [
+    ['loan_id', 'INT, PK', 'Loan number'],
+    ['account_id', 'INT, FK → account, unique', 'The account the loan belongs to'],
+    ['loan_date', 'DATE', 'Loan start date'],
+    ['amount', 'NUMERIC', 'Amount of the loan'],
+    ['duration_months', 'INT', 'Term of the loan in months'],
+    ['monthly_payment', 'NUMERIC', 'Monthly payment'],
+    ['status', 'CHAR(1)', 'A finished and paid, B finished and not paid, C running and on time, D running and behind'],
+    ['is_bad', 'BOOLEAN', 'True for status B or D (defaulted); added when the data is loaded'],
+  ]],
+  trans: ['One row per transaction (1,056,320 rows).', [
+    ['trans_id', 'INT, PK', 'Transaction number'],
+    ['account_id', 'INT, FK → account', 'The account'],
+    ['trans_date', 'DATE', 'Date of the transaction'],
+    ['type', 'TEXT', 'credit (money in) or withdrawal (money out)'],
+    ['operation', 'TEXT', 'cash_deposit, transfer_in, cash_withdrawal, card_withdrawal or transfer_out; empty for interest'],
+    ['amount', 'NUMERIC', 'Amount of the transaction'],
+    ['balance', 'NUMERIC', 'Balance of the account after the transaction'],
+    ['k_symbol', 'TEXT', 'Purpose: interest, penalty_interest, household, pension, insurance, statement_fee, loan_payment'],
+    ['bank', 'TEXT', 'Bank code of the other party'],
+    ['partner_account', 'TEXT', 'Account of the other party'],
+  ]],
+  standing_order: ['One row per permanent payment order (6,471 rows); not used by the scorecard.', [
+    ['order_id', 'INT, PK', 'Order number'],
+    ['account_id', 'INT, FK → account', 'The paying account'],
+    ['bank_to', 'TEXT', 'Bank of the recipient'],
+    ['account_to', 'TEXT', 'Account of the recipient'],
+    ['amount', 'NUMERIC', 'Amount paid each time'],
+    ['k_symbol', 'TEXT', 'Purpose: household, insurance, loan_payment or leasing'],
+  ]],
+};
+// Scripts printed in Appendix C, read from disk so the report always shows the code that ran.
+const SCRIPTS = [
+  ['C.1 Preprocessing', 'The raw files are read, dates and birth numbers are decoded, the Czech codes are translated to English and the rows are loaded into PostgreSQL.',
+    ['lib/parse.js', 'load_berka.js']],
+  ['C.2 Feature extraction', 'One row of candidate metrics per loan, from the 12 months before the loan start date.', ['10_features.sql']],
+  ['C.3 Scorecard logic', 'The pair test, buckets, points, weights and thresholds are calculated from the training loans and stored in the scorecard tables.',
+    ['lib/scorecard.js', 'fit_scorecard.js']],
+  ['C.4 Scoring', 'Every loan gets its points, score and grade from the stored buckets, weights and thresholds.', ['20_score.sql']],
+  ['C.5 Checking the result', 'The Gini function and the views behind the result tables.', ['30_validate.sql']],
 ];
-const SQL_FEATURES = `
--- 1. Transactions in the 12 months before each loan (nothing on or after the loan start date)
-WITH win AS (
-    SELECT l.loan_id, t.*
-    FROM berka.loan l
-    JOIN berka.trans t ON t.account_id = l.account_id
-     AND t.trans_date <  l.loan_date
-     AND t.trans_date >= l.loan_date - 365
-),
--- 2. Counts and totals per loan
-agg AS (
-    SELECT loan_id,
-        COUNT(*) FILTER (WHERE balance < 0)             AS negative_balance_events,
-        SUM(amount) FILTER (WHERE type = 'credit')      AS total_credit,
-        COUNT(DISTINCT COALESCE(bank, '') || '|' || partner_account)
-              FILTER (WHERE operation = 'transfer_in')  AS income_sources
-    FROM win GROUP BY loan_id
-),
--- 3. Balance after the last transaction of each month
-month_end AS (
-    SELECT DISTINCT ON (loan_id, date_trunc('month', trans_date))
-           loan_id, date_trunc('month', trans_date) AS m, balance
-    FROM win
-    ORDER BY loan_id, date_trunc('month', trans_date), trans_date DESC, trans_id DESC
-),
-bal AS (
-    SELECT loan_id,
-        AVG(balance)         AS avg_month_end_balance,
-        STDDEV_SAMP(balance) AS sd_month_end_balance,
-        REGR_SLOPE(balance, (EXTRACT(YEAR FROM m) * 12 + EXTRACT(MONTH FROM m))::numeric) AS slope_per_month
-    FROM month_end GROUP BY loan_id
-)
--- 4. The metrics (months_elapsed = months between account opening, or 365 days before, and the loan)
-SELECT loan_id,
-    negative_balance_events,
-    income_sources,
-    monthly_payment / (total_credit / months_elapsed)   AS dti,
-    sd_month_end_balance / avg_month_end_balance        AS balance_volatility,
-    slope_per_month / ABS(avg_month_end_balance)        AS balance_trend,
-    CASE WHEN n_users > 1 THEN 1 ELSE 0 END             AS joint_account,
-    CASE WHEN rn <= FLOOR(0.7 * n_all) THEN 'train' ELSE 'test' END AS split   -- earliest 70% by loan date
-FROM ...`;
-const SQL_SCORE = `
--- 1. Value -> bucket -> points
-SELECT b.band, b.points
-FROM berka.scorecard_band b
-WHERE b.metric = r.metric
-  AND (b.lower IS NULL OR r.raw_value >  b.lower)
-  AND (b.upper IS NULL OR r.raw_value <= b.upper);
-
--- 2. Short history: pull the points toward the training average
-points = avg_points + (band_points - avg_points) * months_observed / (months_observed + shrink_k)
-
--- 3. Score = sum of weight x points
-SELECT p.loan_id, SUM(w.weight * p.points) AS score
-FROM berka.loan_metric_points p JOIN berka.scorecard_weight w USING (metric)
-GROUP BY p.loan_id;
-
--- 4. Grade from the stored thresholds
-CASE WHEN score >= grade_A THEN 'A' WHEN score >= grade_B THEN 'B'
-     WHEN score >= grade_C THEN 'C' WHEN score >= grade_D THEN 'D' ELSE 'E' END`;
-const SQL_VALIDATE = `
--- Gini = 2 x (share of repaid-defaulted pairs ranked correctly) - 1, calculated from ranks
-CREATE FUNCTION berka.gini(scores numeric[], bad boolean[]) RETURNS numeric AS $$
-    WITH d AS (SELECT s, b FROM unnest(scores, bad) AS u(s, b)),
-    r AS (SELECT b, RANK() OVER (ORDER BY s) + (COUNT(*) OVER (PARTITION BY s) - 1) / 2.0 AS rk FROM d),
-    t AS (SELECT COUNT(*) FILTER (WHERE NOT b) AS ng, COUNT(*) FILTER (WHERE b) AS nb,
-                 SUM(rk) FILTER (WHERE NOT b) AS rg FROM r)
-    SELECT ROUND(2 * ((rg - ng * (ng + 1) / 2.0) / NULLIF(ng * nb, 0)) - 1, 4) FROM t
-$$ LANGUAGE sql;
-
--- Result per grade
-SELECT split, grade, COUNT(*) AS n, COUNT(*) FILTER (WHERE is_bad) AS n_bad,
-       ROUND(AVG(is_bad::int), 4) AS bad_rate
-FROM berka.loan_score GROUP BY split, grade;`;
 
 function figure(file, caption, widthPx = 600) {
   const { data, w, h } = chart(file);
@@ -259,9 +254,12 @@ function build(d) {
   ]));
   add(gap());
   add(H2('3.1 Source tables'));
-  add(P('PK marks the primary key and FK a foreign key. The full definitions are in scripts/berka/00_schema.sql.'));
-  add(table(['Table', 'Columns'], SCHEMA));
-  add(gap());
+  add(P('The eight source tables are listed one by one. PK marks the primary key and FK a foreign key. The definitions are in scripts/berka/00_schema.sql.'));
+  for (const [name, [about, cols]] of Object.entries(SCHEMA)) {
+    add(P(B(name + '. '), about));
+    add(table(['Column', 'Type', 'Description'], cols));
+    add(gap());
+  }
   add(H2('3.2 Data sample'));
   add(P('The first loans in the data (table loan):'));
   add(table(['loan_id', 'account_id', 'loan_date', 'amount', 'duration_months', 'monthly_payment', 'status'], d.sampleLoans.map((l) => [
@@ -285,7 +283,7 @@ function build(d) {
     ['scorecard_weight', 'kept metric', 'Gini coefficient and weight'],
     ['scorecard_param', 'setting', 'grade thresholds, approve line, short-history constant'],
     ['loan_metric_points, loan_score', 'loan (× metric)', 'points, score, grade, decision'],
-    ['validation_* views', 'split / grade', 'Gini, approval and default rates, robustness checks'],
+    ['validation_* views', 'split / grade', 'Gini, approval and default rates'],
   ]));
   add(gap());
 
@@ -302,7 +300,7 @@ function build(d) {
   add(H2('4.2 Point-in-time metrics'));
   add(P('Every metric is calculated from transactions dated in the 12 months before the loan start date. Nothing on or after the loan start date is used, so the score only uses what the bank knew when it made the decision. An automated check confirms that no loan uses a later transaction. The same rule applies to cards: only cards issued before the loan count. Most cards in the data were issued after the loan, and counting them would have made card ownership look far more predictive than it really is.'));
   add(H2('4.3 Candidate metrics'));
-  add(P('The table shows how each candidate metric is calculated from the transactions of the 12 months before the loan. The query is in Appendix C.'));
+  add(P('The table shows how each candidate metric is calculated from the transactions of the 12 months before the loan. The full query is in Appendix C.2.'));
   add(table(['Criterion', 'Metric', 'Calculation'], Object.entries(BY_CRIT).flatMap(([c, ms]) => ms.map((m) => [CRIT[c], METRIC[m], CALC[m]]))));
   add(gap());
   add(P('Month-end balance is the balance after the last transaction of each month. Months observed is the number of months between the account opening (or 12 months before the loan, if later) and the loan start date. Gender is available in the data but is never used as a scoring input.'));
@@ -423,12 +421,6 @@ function build(d) {
   add(figure('bad_rate_by_grade.png', 'Figure 5. Share of loans that really defaulted, by grade (blue = approved grades, red = rejected).', 560));
   add(P(`The default rate rises from grade A to grade E on both sets (train ${gradeRow('train')}; test ${gradeRow('test')}). The test Gini (${f2(S.test.gini)}) is higher than the training Gini (${f2(S.train.gini)}), but the test set holds only ${S.test.n_bad} defaulted loans, so this difference should not be read as an improvement.`));
   add(figure('score_distribution.png', 'Figure 6. Score distribution with the grade thresholds (dashed).', 600));
-  add(H2('7.1 Robustness checks'));
-  add(P('Running loans (status C) may still default later. The scorecard was therefore also checked on finished loans only and on loans issued at least a year before the data ends.'));
-  add(table(['Check', 'Set', 'Loans', 'Defaulted', 'Gini'], d.finished.map((f) => [
-    f.view_name === 'finished_A_vs_B' ? 'Finished loans only' : 'Loans at least 12 months old',
-    f.split === 'train' ? 'Train' : 'Test', f.n, f.n_bad, f.gini === null ? '— (no defaults)' : f2(f.gini)])));
-  add(gap());
 
   // 8
   add(H('8. Worked examples'));
@@ -484,7 +476,7 @@ function build(d) {
     ['Cards issued after the loan start date', 'Only cards issued before the loan count, so no later information enters the score.'],
     ['Accounts with a short history before the loan', 'Points are pulled toward the average (section 4.7).'],
     ['No date for when a second user joined an account', 'Joint-account status is treated as known on the loan start date; stated as a limitation.'],
-    ['Running loans may still default', 'Extra checks on finished loans and on loans at least a year old (section 7.1).'],
+    ['Running loans may still default', 'Stated as a limitation (section 12).'],
   ]));
   add(gap());
 
@@ -509,26 +501,28 @@ function build(d) {
     METRIC[b.metric], bandText(b), Number(b.points).toFixed(1), pct(b.bad_rate), b.n_train])));
   add(gap());
   add(H('Appendix B. How to reproduce'));
+  add(new Paragraph({ spacing: { after: 120 }, children: [new TextRun(t('The code, data pipeline and dashboard are in the repository ')), new ExternalHyperlink({ link: REPO_URL, children: [new TextRun({ text: t(REPO_URL), style: 'Hyperlink' })] }), new TextRun(t('.'))] }));
   add(code('npm install'));
   add(code('node scripts/berka/run_all.js --reload    # download, load, features, fit, score, validate'));
   add(code('docker compose up -d --build              # dashboard on port 8502'));
   add(code('node scripts/berka/capture_charts.js && node scripts/berka/generate_report.js'));
   add(P('Pipeline details and every stored constant are described in scripts/berka/README.md.'));
-  add(H('Appendix C. Main SQL queries'));
-  add(P('The queries below are shortened to the kept metrics. The complete files are in scripts/berka.'));
-  add(H2('C.1 Metrics per loan (10_features.sql)'));
-  add(sql(SQL_FEATURES));
-  add(H2('C.2 Points, score and grade (20_score.sql)'));
-  add(sql(SQL_SCORE));
-  add(H2('C.3 Checking the result (30_validate.sql)'));
-  add(sql(SQL_VALIDATE));
-  add(P('The buckets, points, weights and thresholds are learned from the training loans by scripts/berka/fit_scorecard.js and stored in the tables scorecard_band, scorecard_weight and scorecard_param, which the queries above read.'));
+  add(H('Appendix C. Scripts'));
+  add(P('The scripts below are printed as they are in the folder scripts/berka of the repository. They run in this order.'));
+  for (const [title, about, files] of SCRIPTS) {
+    add(H2(title));
+    add(P(about));
+    for (const f of files) {
+      add(P(B(`scripts/berka/${f}`)));
+      add(sql(fs.readFileSync(path.join(__dirname, f), 'utf8').replace(/\r\n/g, '\n').replace(/\t/g, '    ')));
+    }
+  }
 
   return body;
 }
 
 const REQUIRED = ['1. Executive summary', '2. The data', '3. Data model', '4. Method', '5. Evidence for each metric', '6. The scorecard',
-  '7. Results', '8. Worked examples', '9. Dashboard', '10. Why a scorecard and not machine learning', '11. Sensitive data and data quality', '12. Limitations and next steps', 'Appendix A. Bucket limits and points', 'Appendix B. How to reproduce', 'Appendix C. Main SQL queries'];
+  '7. Results', '8. Worked examples', '9. Dashboard', '10. Why a scorecard and not machine learning', '11. Sensitive data and data quality', '12. Limitations and next steps', 'Appendix A. Bucket limits and points', 'Appendix B. How to reproduce', 'Appendix C. Scripts'];
 
 async function main() {
   const d = await load();
