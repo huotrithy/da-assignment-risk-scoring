@@ -118,6 +118,38 @@ def load_all() -> dict:
     return d
 
 
+# Tables offered for download. Raw transactions and personal fields (birth date, age, gender, partner accounts) are left out.
+EXPORTS = {
+    "loan_scores": ("Loan scores", "One row per loan: score, grade, decision and the real outcome.",
+                    """SELECT s.loan_id, s.split, s.score, s.grade, s.approved, s.status, s.is_bad, l.loan_date, l.amount,
+                              l.duration_months, l.monthly_payment
+                       FROM berka.loan_score s JOIN berka.loan l USING (loan_id) ORDER BY s.loan_id"""),
+    "loan_metrics": ("Metrics per loan", "One row per loan: the candidate metrics from the 12 months before the loan.",
+                     """SELECT loan_id, split, loan_date, is_bad, months_observed, history_months, penalty_events,
+                               negative_balance_events, monthly_inflow, income_sources, dti, min_balance, balance_volatility,
+                               balance_trend, spend_to_income, has_card, joint_account, district_unemployment
+                        FROM berka.loan_features ORDER BY loan_id"""),
+    "loan_metric_points": ("Points per loan and metric", "One row per loan and kept metric: value, bucket, points and weight.",
+                           """SELECT p.loan_id, p.metric, p.raw_value, p.band AS bucket, p.band_points AS bucket_points, p.points, w.weight
+                              FROM berka.loan_metric_points p JOIN berka.scorecard_weight w USING (metric)
+                              ORDER BY p.loan_id, w.weight DESC"""),
+    "scorecard_buckets": ("Buckets and points", "One row per metric and bucket: value range, points and training default rate.",
+                          "SELECT metric, band AS bucket, lower, upper, points, bad_rate, n_train FROM berka.scorecard_band ORDER BY metric, band"),
+    "scorecard_weights": ("Weights", "One row per kept metric: Gini coefficient and weight.",
+                          "SELECT metric, strength AS gini, weight FROM berka.scorecard_weight ORDER BY weight DESC"),
+    "metric_evidence": ("Evidence per candidate metric", "Gini, default rate per group and the decision for all candidate metrics.",
+                        "SELECT * FROM berka.metric_evidence ORDER BY ABS(gini_train) DESC"),
+    "results_by_grade": ("Results by grade", "Loans, defaulted loans and default rate per grade, for training and test loans.",
+                         "SELECT * FROM berka.validation_by_grade ORDER BY split DESC, grade"),
+}
+
+
+@st.cache_data(ttl=600, show_spinner="Preparing export…")
+def load_export(name: str) -> pd.DataFrame:
+    with connect() as conn:
+        return query(conn, EXPORTS[name][2])
+
+
 @st.cache_data(ttl=600, show_spinner="Loading loan data…")
 def load_loan(loan_id: int) -> dict:
     """Everything the bank could see before this loan: the 12-month window. No personal data shown."""
@@ -194,7 +226,7 @@ st.caption(
     f"(train) and checked on the latest 30% (test). {DASHBOARD_NOTE}"
 )
 
-tab_port, tab_ev, tab_crit, tab_loan = st.tabs(["Portfolio", "Evidence", "Criteria by grade", "Loan drill-down"])
+tab_port, tab_ev, tab_crit, tab_loan, tab_export = st.tabs(["Portfolio", "Evidence", "Criteria by grade", "Loan drill-down", "Export data"])
 
 # =========================================================================== portfolio
 with tab_port:
@@ -469,3 +501,16 @@ def loan_drilldown():
 
 with tab_loan:
     loan_drilldown()
+
+
+with tab_export:
+    st.subheader("Export the scorecard data")
+    st.caption("Download any table as a CSV file. Raw transactions and personal fields are not included.")
+    for name, (title, about, _) in EXPORTS.items():
+        df = load_export(name)
+        left, right = st.columns([4, 1])
+        left.markdown(f"**{title}** · {len(df):,} rows × {len(df.columns)} columns  \n{about}")
+        right.download_button("Download CSV", df.to_csv(index=False).encode("utf-8"), file_name=f"berka_{name}.csv",
+                              mime="text/csv", key=f"export_{name}", width="stretch")
+        with st.expander("Preview (first 5 rows)"):
+            st.dataframe(df.head(5), hide_index=True, width="stretch")

@@ -1,11 +1,12 @@
 # Credit Risk Scorecard dashboard (Streamlit)
 
-Four tabs over the scorecard in schema `berka` (real Berka bank loans, built by `npm run scorecard` — see scripts/berka/README.md):
+Five tabs over the scorecard in schema `berka` (real Berka bank loans, built by `npm run scorecard` — see scripts/berka/README.md):
 
 - **Portfolio** — loans scored, approval rate, default rate approved vs rejected, test Gini; loans per grade; the real default rate per grade on train and test; score histogram with the thresholds.
 - **Evidence** — strength (Gini) of every candidate metric and why it was kept or dropped; default rate across each metric's value groups; correlation between metrics (duplicates); weights from each metric's strength; checks on unseen, finished and older loans; short-history check.
 - **Criteria by grade** — heatmap of average criterion points per grade.
 - **Loan drill-down** — pick a loan: value → bucket → points → weight for each metric, the 12 months of money in/out and balance before the loan, warning-sign transactions, then what really happened.
+- **Export data** — download the scorecard tables as CSV files (loan scores, metrics per loan, points, buckets, weights, evidence, results by grade). Raw transactions and personal fields are not included.
 
 ## Run with Docker (port 8502)
 

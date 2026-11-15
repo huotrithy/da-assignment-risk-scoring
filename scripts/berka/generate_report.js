@@ -433,11 +433,12 @@ function build(d) {
 
   // 9
   add(H('9. Dashboard'));
-  add(new Paragraph({ spacing: { after: 120 }, children: [new TextRun(t('The interactive dashboard is available at ')), new ExternalHyperlink({ link: DASHBOARD_URL, children: [new TextRun({ text: t(DASHBOARD_URL), style: 'Hyperlink' })] }), new TextRun(t('. It reads the same tables as this report and has four pages:'))] }));
+  add(new Paragraph({ spacing: { after: 120 }, children: [new TextRun(t('The interactive dashboard is available at ')), new ExternalHyperlink({ link: DASHBOARD_URL, children: [new TextRun({ text: t(DASHBOARD_URL), style: 'Hyperlink' })] }), new TextRun(t('. It reads the same tables as this report and has five pages:'))] }));
   add(bullet(B('Portfolio: '), 'loans per grade, the real default rate per grade on training and test loans, and the score distribution.'));
   add(bullet(B('Evidence: '), 'strength of every candidate metric, default rate across value groups, correlations, weights, and the checks on unseen loans.'));
   add(bullet(B('Criteria by grade: '), 'average criterion points for each grade.'));
   add(bullet(B('Loan drill-down: '), 'for any loan, each metric\'s value, bucket, points and weight, its 12 months of money in and out and balance before the loan, and finally what really happened.'));
+  add(bullet(B('Export data: '), 'the scorecard tables can be downloaded as CSV files. Raw transactions and personal fields are not included.'));
   add(figure('example_balance.png', 'Figure 7. Drill-down example: month-end balance in the 12 months before a loan.', 480));
 
   // 10
