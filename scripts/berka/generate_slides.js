@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const PptxGenJS = require('pptxgenjs');
-const { ROOT, DASHBOARD_URL, METRIC, CRIT, VERDICT, STATUS, pct, f2, int, chart, checkText, load, pairText, bandText, valueText } = require('./lib/report_data');
+const { ROOT, DASHBOARD_URL, METRIC, DETAIL, CRIT, VERDICT, STATUS, pct, f2, int, chart, checkText, load, pairText, bandText, valueText } = require('./lib/report_data');
 
 const ICONS = path.join(ROOT, 'docs', 'img', 'icons');
 const OUT = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, 'docs', 'Final_Presentation.pptx');
@@ -39,27 +39,6 @@ const MEANING = {
   joint_account: 'A second person may use the account',
   age_at_loan: "Owner's age when the loan started",
   district_unemployment: "Unemployment rate in the owner's district",
-};
-// Kept-metric slides: the question, why it signals risk, how it is measured.
-const DETAIL = {
-  negative_balance_events: ['Has the account gone below zero?',
-    'An overdraft means the money ran out. Each account has only one loan, so this is the closest sign of missed payments.',
-    'Number of transactions that left a negative balance'],
-  dti: ['Can the customer afford the monthly loan payment?',
-    'The bigger the share of income the loan takes, the less is left for living costs.',
-    'Monthly loan payment ÷ average money in per month (money in ÷ months observed)'],
-  income_sources: ['Does money come from more than one source?',
-    'A second source cushions the customer if one stops.',
-    'Number of different accounts sending money in by bank transfer'],
-  balance_volatility: ['Is the balance steady, or does it swing?',
-    'Big swings point to irregular income or spending, which makes repayments harder to plan.',
-    'Spread (standard deviation) of month-end balances ÷ their average'],
-  balance_trend: ['Is the balance growing or shrinking?',
-    'A shrinking balance means more money goes out than comes in.',
-    'Change in month-end balance per month (slope) ÷ average balance'],
-  joint_account: ['Does a second person use the account?',
-    'Two people behind one account can mean a second income. None of the joint-account training loans defaulted.',
-    'The account has a second user (disposition type DISPONENT)'],
 };
 
 function image(slide, file, x, y, w, h) {

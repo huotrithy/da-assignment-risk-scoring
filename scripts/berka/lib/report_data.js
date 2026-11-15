@@ -15,6 +15,27 @@ const METRIC = {
   spend_to_income: 'Spend ÷ income', history_months: 'Account age (months)', has_card: 'Has a card',
   joint_account: 'Joint account (two users)', age_at_loan: 'Age', district_unemployment: 'District unemployment',
 };
+// Kept metrics: the question, why it signals risk, how it is measured.
+const DETAIL = {
+  negative_balance_events: ['Has the account gone below zero?',
+    'An overdraft means the money ran out. Each account has only one loan, so this is the closest sign of missed payments.',
+    'Number of transactions that left a negative balance'],
+  dti: ['Can the customer afford the monthly loan payment?',
+    'The bigger the share of income the loan takes, the less is left for living costs.',
+    'Monthly loan payment ÷ average money in per month (money in ÷ months observed)'],
+  income_sources: ['Does money come from more than one source?',
+    'A second source cushions the customer if one stops.',
+    'Number of different accounts sending money in by bank transfer'],
+  balance_volatility: ['Is the balance steady, or does it swing?',
+    'Big swings point to irregular income or spending, which makes repayments harder to plan.',
+    'Spread (standard deviation) of month-end balances ÷ their average'],
+  balance_trend: ['Is the balance growing or shrinking?',
+    'A shrinking balance means more money goes out than comes in.',
+    'Change in month-end balance per month (slope) ÷ average balance'],
+  joint_account: ['Does a second person use the account?',
+    'Two people behind one account can mean a second income. None of the joint-account training loans defaulted.',
+    'The account has a second user (disposition type DISPONENT)'],
+};
 const CRIT = { payment: 'Payment behaviour', income: 'Income & capacity', balance: 'Balance behaviour', relationship: 'Account relationship', demographics: 'Demographics' };
 const VERDICT = { kept: 'Kept', dropped_weak: 'Dropped — weak', dropped_duplicate: 'Dropped — duplicate', dropped_no_added_value: 'Dropped — no added value' };
 // Loan status meanings (B and D count as defaulted: berka.loan.is_bad).
@@ -116,4 +137,4 @@ function valueText(metric, v) {
   return Number.isInteger(n) || Math.abs(n) >= 10 ? n.toFixed(0) : n.toFixed(2);
 }
 
-module.exports = { ROOT, IMG, DASHBOARD_URL, METRIC, CRIT, VERDICT, STATUS, pct, f2, int, chart, checkText, load, pairText, bandText, valueText };
+module.exports = { ROOT, IMG, DASHBOARD_URL, METRIC, DETAIL, CRIT, VERDICT, STATUS, pct, f2, int, chart, checkText, load, pairText, bandText, valueText };
