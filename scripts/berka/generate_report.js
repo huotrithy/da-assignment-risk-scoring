@@ -1,6 +1,7 @@
 // Generate docs/Final_Report.docx from the live scorecard tables (no number is typed by hand).
 // Needs: npm run scorecard (tables) and node scripts/berka/capture_charts.js (images in docs/img/charts).
 // Usage: node scripts/berka/generate_report.js [output.docx]
+// Then, on Windows with Word: powershell -File scripts/berka/update_toc.ps1 -Path docs/Final_Report.docx (fills in the contents page).
 const fs = require('fs');
 const path = require('path');
 const {
@@ -142,15 +143,11 @@ const SCHEMA = {
     ['k_symbol', 'TEXT', 'Purpose: household, insurance, loan_payment or leasing'],
   ]],
 };
-// Scripts printed in Appendix C, read from disk so the report always shows the code that ran.
+// SQL printed in Appendix C, read from disk so the report always shows the code that ran.
 const SCRIPTS = [
-  ['C.1 Preprocessing', 'The raw files are read, dates and birth numbers are decoded, the Czech codes are translated to English and the rows are loaded into PostgreSQL.',
-    ['lib/parse.js', 'load_berka.js']],
-  ['C.2 Feature extraction', 'One row of candidate metrics per loan, from the 12 months before the loan start date.', ['10_features.sql']],
-  ['C.3 Scorecard logic', 'The pair test, buckets, points, weights and thresholds are calculated from the training loans and stored in the scorecard tables.',
-    ['lib/scorecard.js', 'fit_scorecard.js']],
-  ['C.4 Scoring', 'Every loan gets its points, score and grade from the stored buckets, weights and thresholds.', ['20_score.sql']],
-  ['C.5 Checking the result', 'The Gini function and the views behind the result tables.', ['30_validate.sql']],
+  ['C.1 Feature extraction', 'One row of candidate metrics per loan, from the 12 months before the loan start date.', ['10_features.sql']],
+  ['C.2 Scoring', 'Every loan gets its points, score and grade from the stored buckets, weights and thresholds.', ['20_score.sql']],
+  ['C.3 Checking the result', 'The Gini function and the views behind the result tables.', ['30_validate.sql']],
 ];
 
 function figure(file, caption, widthPx = 600) {
@@ -300,7 +297,7 @@ function build(d) {
   add(H2('4.2 Point-in-time metrics'));
   add(P('Every metric is calculated from transactions dated in the 12 months before the loan start date. Nothing on or after the loan start date is used, so the score only uses what the bank knew when it made the decision. An automated check confirms that no loan uses a later transaction. The same rule applies to cards: only cards issued before the loan count. Most cards in the data were issued after the loan, and counting them would have made card ownership look far more predictive than it really is.'));
   add(H2('4.3 Candidate metrics'));
-  add(P('The table shows how each candidate metric is calculated from the transactions of the 12 months before the loan. The full query is in Appendix C.2.'));
+  add(P('The table shows how each candidate metric is calculated from the transactions of the 12 months before the loan. The full query is in Appendix C.1.'));
   add(table(['Criterion', 'Metric', 'Calculation'], Object.entries(BY_CRIT).flatMap(([c, ms]) => ms.map((m) => [CRIT[c], METRIC[m], CALC[m]]))));
   add(gap());
   add(P('Month-end balance is the balance after the last transaction of each month. Months observed is the number of months between the account opening (or 12 months before the loan, if later) and the loan start date. Gender is available in the data but is never used as a scoring input.'));
@@ -507,8 +504,8 @@ function build(d) {
   add(code('docker compose up -d --build              # dashboard on port 8502'));
   add(code('node scripts/berka/capture_charts.js && node scripts/berka/generate_report.js'));
   add(P('Pipeline details and every stored constant are described in scripts/berka/README.md.'));
-  add(H('Appendix C. Scripts'));
-  add(P('The scripts below are printed as they are in the folder scripts/berka of the repository. They run in this order.'));
+  add(H('Appendix C. SQL queries'));
+  add(P('The SQL files below are printed as they are in the folder scripts/berka of the repository. They run in this order. Before them, the raw files are loaded into PostgreSQL with dates decoded and Czech codes translated (load_berka.js); between C.1 and C.2, the buckets, points, weights and thresholds are calculated from the training loans (fit_scorecard.js).'));
   for (const [title, about, files] of SCRIPTS) {
     add(H2(title));
     add(P(about));
@@ -522,7 +519,7 @@ function build(d) {
 }
 
 const REQUIRED = ['1. Executive summary', '2. The data', '3. Data model', '4. Method', '5. Evidence for each metric', '6. The scorecard',
-  '7. Results', '8. Worked examples', '9. Dashboard', '10. Why a scorecard and not machine learning', '11. Sensitive data and data quality', '12. Limitations and next steps', 'Appendix A. Bucket limits and points', 'Appendix B. How to reproduce', 'Appendix C. Scripts'];
+  '7. Results', '8. Worked examples', '9. Dashboard', '10. Why a scorecard and not machine learning', '11. Sensitive data and data quality', '12. Limitations and next steps', 'Appendix A. Bucket limits and points', 'Appendix B. How to reproduce', 'Appendix C. SQL queries'];
 
 async function main() {
   const d = await load();
@@ -531,7 +528,6 @@ async function main() {
   if (missing.length) throw new Error(`missing sections: ${missing.join(', ')}`);
   checkText(allText, /previous version|previous review|300–850|\bband(s|ing)?\b/i);
   const doc = new Document({
-    features: { updateFields: true },
     styles: { default: { document: { run: { font: 'Calibri', size: 22 } } } },
     sections: [{ properties: { page: { margin: { top: 1134, bottom: 1134, left: 1134, right: 1134 } } }, children: body }],
   });
