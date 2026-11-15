@@ -60,6 +60,10 @@ async function load() {
       corr: await q(`SELECT * FROM berka.metric_correlation WHERE ABS(spearman) >= 0.5 ORDER BY ABS(spearman) DESC`),
       weights: await q(`SELECT * FROM berka.scorecard_weight ORDER BY weight DESC`),
       critw: await q(`SELECT * FROM berka.criterion_weight ORDER BY weight DESC`),
+      tenths: await q(`SELECT d AS tenth, COUNT(*)::int n, MIN(score) lo, MAX(score) hi, SUM(is_bad::int)::int n_bad, AVG(is_bad::int) bad_rate
+                        FROM (SELECT *, NTILE(10) OVER (ORDER BY score DESC, loan_id) d FROM berka.loan_score WHERE split = 'train') x GROUP BY d ORDER BY d`),
+      avgPoints: await q(`SELECT p.metric, AVG(p.band_points) avg_points FROM berka.loan_metric_points p JOIN berka.loan_features f USING (loan_id) WHERE f.split = 'train' GROUP BY 1`),
+      pointsByGrade: await q(`SELECT s.grade, p.metric, AVG(p.points) pts FROM berka.loan_metric_points p JOIN berka.loan_score s USING (loan_id) GROUP BY 1, 2`),
       bands: await q(`SELECT b.*, w.weight FROM berka.scorecard_band b JOIN berka.scorecard_weight w USING (metric) ORDER BY w.weight DESC, b.band`),
       param: Object.fromEntries((await q(`SELECT name, value FROM berka.scorecard_param`)).map((r) => [r.name, Number(r.value)])),
       summary: await q(`SELECT * FROM berka.validation_summary ORDER BY split DESC`),
