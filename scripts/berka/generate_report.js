@@ -44,6 +44,119 @@ function table(header, rows, widths) {
   });
 }
 const gap = () => new Paragraph({ text: '', spacing: { after: 120 } });
+// A block of SQL: one shaded paragraph per line. Not passed through t(): SQL keeps the real column names (band, NULL).
+const sql = (text) => [...text.trim().split('\n').map((line) => new Paragraph({
+  spacing: { after: 0 }, shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'F3F3F3' },
+  children: [new TextRun({ text: line.replace(/ /g, ' ') || ' ', font: 'Consolas', size: 16 })],
+})), gap()];
+
+// How each candidate metric is calculated (scripts/berka/10_features.sql), over the 12 months before the loan.
+const CALC = {
+  negative_balance_events: "COUNT(*) FILTER (WHERE balance < 0)",
+  penalty_events: "COUNT(*) FILTER (WHERE k_symbol = 'penalty_interest')",
+  dti: 'monthly_payment ÷ (total money in ÷ months observed)',
+  income_sources: "COUNT(DISTINCT bank || partner_account) FILTER (WHERE operation = 'transfer_in')",
+  monthly_inflow: "SUM(amount) FILTER (WHERE type = 'credit') ÷ months observed",
+  balance_volatility: 'STDDEV_SAMP(month-end balance) ÷ AVG(month-end balance)',
+  min_balance: 'MIN(balance)',
+  balance_trend: 'REGR_SLOPE(month-end balance, month) ÷ ABS(AVG(month-end balance))',
+  spend_to_income: 'total money out ÷ total money in',
+  joint_account: 'the account has more than one disposition (owner + second user)',
+  history_months: '(loan_date − open_date) in months',
+  has_card: 'a card of the owner with issued_date < loan_date exists',
+  age_at_loan: 'AGE(loan_date, birth_date) in years',
+  district_unemployment: 'unemployment rate of the owner\'s district (1996, else 1995)',
+};
+const BY_CRIT = {
+  payment: ['negative_balance_events', 'penalty_events'], income: ['dti', 'income_sources', 'monthly_inflow'],
+  balance: ['balance_volatility', 'min_balance', 'balance_trend', 'spend_to_income'],
+  relationship: ['joint_account', 'history_months', 'has_card'], demographics: ['age_at_loan', 'district_unemployment'],
+};
+const SCHEMA = [
+  ['district', 'district_id (PK), name, region, inhabitants, avg_salary, unemployment_95, unemployment_96, entrepreneurs_per_1000, crimes_95, crimes_96'],
+  ['account', 'account_id (PK), district_id (FK), frequency, open_date'],
+  ['client', 'client_id (PK), birth_date, gender, district_id (FK)'],
+  ['disposition', 'disp_id (PK), client_id (FK), account_id (FK), type (OWNER / DISPONENT)'],
+  ['card', 'card_id (PK), disp_id (FK), type, issued_date'],
+  ['loan', 'loan_id (PK), account_id (FK, unique), loan_date, amount, duration_months, monthly_payment, status, is_bad'],
+  ['trans', 'trans_id (PK), account_id (FK), trans_date, type, operation, amount, balance, k_symbol, bank, partner_account'],
+  ['standing_order', 'order_id (PK), account_id (FK), bank_to, account_to, amount, k_symbol'],
+];
+const SQL_FEATURES = `
+-- 1. Transactions in the 12 months before each loan (nothing on or after the loan start date)
+WITH win AS (
+    SELECT l.loan_id, t.*
+    FROM berka.loan l
+    JOIN berka.trans t ON t.account_id = l.account_id
+     AND t.trans_date <  l.loan_date
+     AND t.trans_date >= l.loan_date - 365
+),
+-- 2. Counts and totals per loan
+agg AS (
+    SELECT loan_id,
+        COUNT(*) FILTER (WHERE balance < 0)             AS negative_balance_events,
+        SUM(amount) FILTER (WHERE type = 'credit')      AS total_credit,
+        COUNT(DISTINCT COALESCE(bank, '') || '|' || partner_account)
+              FILTER (WHERE operation = 'transfer_in')  AS income_sources
+    FROM win GROUP BY loan_id
+),
+-- 3. Balance after the last transaction of each month
+month_end AS (
+    SELECT DISTINCT ON (loan_id, date_trunc('month', trans_date))
+           loan_id, date_trunc('month', trans_date) AS m, balance
+    FROM win
+    ORDER BY loan_id, date_trunc('month', trans_date), trans_date DESC, trans_id DESC
+),
+bal AS (
+    SELECT loan_id,
+        AVG(balance)         AS avg_month_end_balance,
+        STDDEV_SAMP(balance) AS sd_month_end_balance,
+        REGR_SLOPE(balance, (EXTRACT(YEAR FROM m) * 12 + EXTRACT(MONTH FROM m))::numeric) AS slope_per_month
+    FROM month_end GROUP BY loan_id
+)
+-- 4. The metrics (months_elapsed = months between account opening, or 365 days before, and the loan)
+SELECT loan_id,
+    negative_balance_events,
+    income_sources,
+    monthly_payment / (total_credit / months_elapsed)   AS dti,
+    sd_month_end_balance / avg_month_end_balance        AS balance_volatility,
+    slope_per_month / ABS(avg_month_end_balance)        AS balance_trend,
+    CASE WHEN n_users > 1 THEN 1 ELSE 0 END             AS joint_account,
+    CASE WHEN rn <= FLOOR(0.7 * n_all) THEN 'train' ELSE 'test' END AS split   -- earliest 70% by loan date
+FROM ...`;
+const SQL_SCORE = `
+-- 1. Value -> bucket -> points
+SELECT b.band, b.points
+FROM berka.scorecard_band b
+WHERE b.metric = r.metric
+  AND (b.lower IS NULL OR r.raw_value >  b.lower)
+  AND (b.upper IS NULL OR r.raw_value <= b.upper);
+
+-- 2. Short history: pull the points toward the training average
+points = avg_points + (band_points - avg_points) * months_observed / (months_observed + shrink_k)
+
+-- 3. Score = sum of weight x points
+SELECT p.loan_id, SUM(w.weight * p.points) AS score
+FROM berka.loan_metric_points p JOIN berka.scorecard_weight w USING (metric)
+GROUP BY p.loan_id;
+
+-- 4. Grade from the stored thresholds
+CASE WHEN score >= grade_A THEN 'A' WHEN score >= grade_B THEN 'B'
+     WHEN score >= grade_C THEN 'C' WHEN score >= grade_D THEN 'D' ELSE 'E' END`;
+const SQL_VALIDATE = `
+-- Gini = 2 x (share of repaid-defaulted pairs ranked correctly) - 1, calculated from ranks
+CREATE FUNCTION berka.gini(scores numeric[], bad boolean[]) RETURNS numeric AS $$
+    WITH d AS (SELECT s, b FROM unnest(scores, bad) AS u(s, b)),
+    r AS (SELECT b, RANK() OVER (ORDER BY s) + (COUNT(*) OVER (PARTITION BY s) - 1) / 2.0 AS rk FROM d),
+    t AS (SELECT COUNT(*) FILTER (WHERE NOT b) AS ng, COUNT(*) FILTER (WHERE b) AS nb,
+                 SUM(rk) FILTER (WHERE NOT b) AS rg FROM r)
+    SELECT ROUND(2 * ((rg - ng * (ng + 1) / 2.0) / NULLIF(ng * nb, 0)) - 1, 4) FROM t
+$$ LANGUAGE sql;
+
+-- Result per grade
+SELECT split, grade, COUNT(*) AS n, COUNT(*) FILTER (WHERE is_bad) AS n_bad,
+       ROUND(AVG(is_bad::int), 4) AS bad_rate
+FROM berka.loan_score GROUP BY split, grade;`;
 
 function figure(file, caption, widthPx = 600) {
   const { data, w, h } = chart(file);
@@ -58,9 +171,6 @@ function build(d) {
   const P_ = d.param;
   const { S, kept, ev, nBad, histBy: hist } = d;
   const dropped = d.evidence.filter((e) => e.verdict !== 'kept');
-  const weak = d.evidence.filter((e) => e.verdict === 'dropped_weak').map((e) => METRIC[e.metric]);
-  const dups = d.evidence.filter((e) => e.verdict === 'dropped_duplicate').map((e) => METRIC[e.metric]);
-  const listOf = (a) => { const l = a.map((x, i) => (i === 0 ? x : x.charAt(0).toLowerCase() + x.slice(1))); return l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}` : l.join(''); };
   const jointW = d.weights.find((w) => w.metric === 'joint_account');
   const jointRank = d.weights.findIndex((w) => w.metric === 'joint_account') + 1;
   const rankWord = ['', 'largest', 'second-largest', 'third-largest', 'fourth-largest'][jointRank] || `${jointRank}th-largest`;
@@ -87,11 +197,11 @@ function build(d) {
   add(H('1. Executive summary'));
   add(P(`This report describes a credit risk scorecard built on real bank data. The Berka / PKDD'99 dataset holds ${int(d.counts.accounts)} accounts, ${int(d.counts.trans)} transactions and ${int(d.counts.loans)} loans from one Czech bank (1993–1998), with the real outcome of every loan: ${nBad} loans (${pct(nBad / d.counts.loans)}) were not repaid.`));
   add(P('Because the outcome is known, every part of the scorecard is decided by the data:'));
-  add(bullet(B('Metrics: '), `${d.evidence.length} candidate metrics were tested; ${kept.length} were kept. ${listOf(weak)} were dropped because they did not separate repaid from defaulted loans; ${listOf(dups).replace(/^./, (c) => c.toLowerCase())} were dropped because they duplicated a stronger metric.`));
+  add(bullet(B('Metrics: '), `${d.evidence.length} candidate metrics were tested; ${kept.length} were kept. The others were too weak or repeated a stronger metric (section 5).`));
   add(bullet(B('Weights: '), 'a stronger metric counts more: the weight of a metric is its share of the total strength of the kept metrics.'));
   add(bullet(B('Points: '), 'each metric is split into buckets and scored by rank: 100 points for the bucket with the lowest real default rate, down to 10 for the highest.'));
   add(bullet(B('Score: '), 'the weighted sum of points; a higher score is safer and the maximum is 100.'));
-  add(bullet(B('Thresholds: '), `a loan is approved only in score ranges where the real default rate is below the average. On the test loans, ${pct(S.test.approval_rate, 0)} would be approved; ${pct(S.test.bad_rate_approved)} of approved loans defaulted, against ${pct(S.test.bad_rate_rejected)} of rejected loans (all loans: ${pct(d.overall.appr, 0)} approved, ${pct(d.overall.bad_appr)} vs ${pct(d.overall.bad_rej)}). Grade C is the approved grade closest to the line, so it is sent to a person for review; these figures count it as approved.`));
+  add(bullet(B('Approval: '), `a loan is approved only where the default rate is below the average. On the test loans, ${pct(S.test.bad_rate_approved)} of the approved loans defaulted, against ${pct(S.test.bad_rate_rejected)} of the rejected loans.`));
   add(P(`The scorecard was learned on the earliest ${int(S.train.n)} loans and checked on the latest ${int(S.test.n)}, which it never saw. It separates repaid from defaulted loans with a Gini of ${f2(S.train.gini)} on the training loans and ${f2(S.test.gini)} on the test loans, and the default rate rises steadily from grade A to grade E. The test set contains only ${S.test.n_bad} defaulted loans, so the test figures show a direction rather than a precise rate.`));
   add(H2('1.1 Business problem and goal'));
   add(P('A loan that is not repaid is a loss for the bank. Checking each application by hand is slow, and two loan officers can decide differently on the same customer. The goal is a score that treats every applicant the same way:'));
@@ -148,6 +258,25 @@ function build(d) {
     ['account → trans, standing_order', 'one account has many transactions and orders'],
   ]));
   add(gap());
+  add(H2('3.1 Source tables'));
+  add(P('PK marks the primary key and FK a foreign key. The full definitions are in scripts/berka/00_schema.sql.'));
+  add(table(['Table', 'Columns'], SCHEMA));
+  add(gap());
+  add(H2('3.2 Data sample'));
+  add(P('The first loans in the data (table loan):'));
+  add(table(['loan_id', 'account_id', 'loan_date', 'amount', 'duration_months', 'monthly_payment', 'status'], d.sampleLoans.map((l) => [
+    l.loan_id, l.account_id, l.loan_date, int(l.amount), l.duration_months, int(l.monthly_payment), l.status])));
+  add(gap());
+  add(P(`Transactions shortly before loan ${d.examples[0].score.loan_id} was granted (table trans). The partner bank and account are left out because they are sensitive. The data holds a date but no time, so the order of transactions within one day is not known.`));
+  add(table(['trans_id', 'trans_date', 'type', 'operation', 'amount', 'balance', 'k_symbol'], d.sampleTrans.map((r) => [
+    r.trans_id, r.trans_date, r.type, r.operation ?? '—', int(r.amount), int(r.balance), r.k_symbol ?? '—'])));
+  add(gap());
+  add(P('From these tables one row of metrics is calculated per loan (table loan_features). The two loans below are the worked examples of section 8:'));
+  add(table(['loan_id', 'split', 'months_observed', 'negative_balance_events', 'dti', 'income_sources', 'balance_volatility', 'balance_trend', 'joint_account'], d.sampleFeatures.map((f) => [
+    f.loan_id, f.split, Number(f.months_observed).toFixed(1), f.negative_balance_events, f.dti === null ? '—' : Number(f.dti).toFixed(2), f.income_sources,
+    f.balance_volatility === null ? '—' : Number(f.balance_volatility).toFixed(2), f.balance_trend === null ? '—' : Number(f.balance_trend).toFixed(3), f.joint_account])));
+  add(gap());
+  add(H2('3.3 Scorecard tables'));
   add(table(['Scorecard table', 'One row per', 'Holds'], [
     ['loan_features', 'loan', '14 candidate metrics from the 12 months before the loan; train/test flag'],
     ['metric_evidence', 'candidate metric', 'Gini, default rate per group, verdict and reason'],
@@ -173,14 +302,10 @@ function build(d) {
   add(H2('4.2 Point-in-time metrics'));
   add(P('Every metric is calculated from transactions dated in the 12 months before the loan start date. Nothing on or after the loan start date is used, so the score only uses what the bank knew when it made the decision. An automated check confirms that no loan uses a later transaction. The same rule applies to cards: only cards issued before the loan count. Most cards in the data were issued after the loan, and counting them would have made card ownership look far more predictive than it really is.'));
   add(H2('4.3 Candidate metrics'));
-  add(table(['Criterion', 'Candidate metrics'], [
-    [CRIT.payment, `${METRIC.penalty_events}; ${METRIC.negative_balance_events}`],
-    [CRIT.income, `${METRIC.dti}; ${METRIC.income_sources}; ${METRIC.monthly_inflow}`],
-    [CRIT.balance, `${METRIC.balance_volatility}; ${METRIC.min_balance}; ${METRIC.balance_trend}; ${METRIC.spend_to_income}`],
-    [CRIT.relationship, `${METRIC.history_months}; ${METRIC.has_card}; ${METRIC.joint_account}`],
-    [CRIT.demographics, `${METRIC.age_at_loan}; ${METRIC.district_unemployment}`],
-  ]));
-  add(P('Gender is available in the data but is never used as a scoring input.'));
+  add(P('The table shows how each candidate metric is calculated from the transactions of the 12 months before the loan. The query is in Appendix C.'));
+  add(table(['Criterion', 'Metric', 'Calculation'], Object.entries(BY_CRIT).flatMap(([c, ms]) => ms.map((m) => [CRIT[c], METRIC[m], CALC[m]]))));
+  add(gap());
+  add(P('Month-end balance is the balance after the last transaction of each month. Months observed is the number of months between the account opening (or 12 months before the loan, if later) and the loan start date. Gender is available in the data but is never used as a scoring input.'));
   add(H2('4.4 Selection rules'));
   add(bullet(B('Strength: '), 'how well the metric tells a defaulted loan from a repaid one, measured on the training loans with a pair test (explained below). A metric with a strength below 0.10 is dropped as weak.'));
   add(bullet(B('Duplicates: '), 'Spearman rank correlation between every pair of metrics. At 0.5 or above (either sign) the two metrics describe the same behaviour, so the weaker one is dropped. This stops one behaviour being scored twice.'));
@@ -253,7 +378,6 @@ function build(d) {
   add(P(`${kept.length} of the ${d.evidence.length} candidates were kept. The strongest is balance volatility: loans in the most volatile quarter defaulted ${pct(ev.balance_volatility.bad_rate_q4, 0)} of the time, against ${pct(ev.balance_volatility.bad_rate_q1, 0)} in the most stable quarter. Borrowers with an overdraft in the year before the loan defaulted ${pct(ev.negative_balance_events.bad_rate_q2, 0)} of the time, against ${pct(ev.negative_balance_events.bad_rate_q1, 0)} of the rest. Age (Gini ${f2(ev.age_at_loan.gini_train)}), district unemployment and the spending ratio carry almost no signal.`));
   add(H2('5.1 Why each dropped metric was dropped'));
   for (const e of dropped) add(bullet(B(`${METRIC[e.metric]}: `), e.reason.replace(/negative_balance_events|balance_volatility|balance_trend|[a-z_]+_[a-z_]+/g, (m) => METRIC[m] || m)));
-  add(P(`Account age, the most direct measure of history length, was dropped on the edge of the rule: its rank correlation with balance trend is ${pairText('history_months', 'balance_trend')}, right at the 0.5 limit.`));
   add(P(`A large difference between groups is not enough on its own. Only ${d.card.n} of the ${d.card.n_all} training borrowers had a card before their loan, and ${d.card.bad} of them defaulted. The group is too small to separate repaid from defaulted loans across the whole portfolio, so card ownership scores low overall even though card holders look safe.`));
   add(P(`Rank correlation was checked for every pair of metrics (Figure 3). ${METRIC.penalty_events} and overdraft events (${pairText('penalty_events', 'negative_balance_events')}), and lowest balance and balance volatility (${pairText('min_balance', 'balance_volatility')}), describe the same behaviour, so the weaker metric of each pair was dropped. Spend ÷ income and balance trend also overlap (${pairText('spend_to_income', 'balance_trend')}); spend ÷ income had already been dropped as weak.`));
   add(figure('correlation.png', 'Figure 3. Rank correlation between candidate metrics (training loans). Values shown where |r| ≥ 0.5.', 560));
@@ -279,7 +403,7 @@ function build(d) {
   add(P(`Each weight is the Gini coefficient of the metric divided by the total (${strengthTotal.toFixed(2)}). For ${METRIC[topW.metric].toLowerCase()}: ${strength(topW).toFixed(2)} ÷ ${strengthTotal.toFixed(2)} = ${pct(topW.weight)}. It counts about ${(Number(topW.weight) / Number(lastW.weight)).toFixed(0)} times as much as ${METRIC[lastW.metric].toLowerCase()} (${pct(lastW.weight)}). Age and district unemployment did not pass the pair test (Gini ${f2(ev.age_at_loan.gini_train)} and ${f2(ev.district_unemployment.gini_train)}), so no demographic metric is in the score. Gender was never a candidate.`));
   add(figure('weights.png', 'Figure 4. Weight of each kept metric in the score.', 520));
   add(H2('6.3 Short history'));
-  add(P(`A customer with one month of clean history should not look as good as one with years of it. Two things prevent this. First, money-based metrics are averaged over the months actually observed, and the payment metric is scored as "any overdraft in the window", so a short record cannot look perfect simply because little has happened yet. Second, points are pulled toward the average when few months were observed (section 4.7). As a result, customers whose account was less than six months old were approved ${pct(hist['<6'].approval_rate)} of the time, against ${pct(hist['12+'].approval_rate)} for accounts of a year or more. Their real default rate (${pct(hist['<6'].bad_rate)}) was also higher (${pct(hist['12+'].bad_rate)} for a year or more).`));
+  add(P(`Section 4.7 describes how a short history is handled. The effect: loans on accounts less than six months old were approved ${pct(hist['<6'].approval_rate)} of the time, against ${pct(hist['12+'].approval_rate)} for accounts of a year or more. Their real default rate was also higher (${pct(hist['<6'].bad_rate)} against ${pct(hist['12+'].bad_rate)}).`));
   add(table(['Account age at loan start', 'Loans', 'Real default rate', 'Average score', 'Approved'], d.history.map((h) => [
     `${h.history_bucket} months`, h.n, pct(h.bad_rate), Number(h.avg_score).toFixed(1), pct(h.approval_rate)])));
   add(gap());
@@ -295,9 +419,6 @@ function build(d) {
     ['Total', S[split].n, S[split].n_bad, rate(S[split].n_bad, S[split].n), ''],
   ]);
   add(gradeTable('test', 'Test'));
-  add(gap());
-  add(P('The same table for the training loans:'));
-  add(gradeTable('train', 'Training'));
   add(gap());
   add(figure('bad_rate_by_grade.png', 'Figure 5. Share of loans that really defaulted, by grade (blue = approved grades, red = rejected).', 560));
   add(P(`The default rate rises from grade A to grade E on both sets (train ${gradeRow('train')}; test ${gradeRow('test')}). The test Gini (${f2(S.test.gini)}) is higher than the training Gini (${f2(S.train.gini)}), but the test set holds only ${S.test.n_bad} defaulted loans, so this difference should not be read as an improvement.`));
@@ -393,12 +514,21 @@ function build(d) {
   add(code('docker compose up -d --build              # dashboard on port 8502'));
   add(code('node scripts/berka/capture_charts.js && node scripts/berka/generate_report.js'));
   add(P('Pipeline details and every stored constant are described in scripts/berka/README.md.'));
+  add(H('Appendix C. Main SQL queries'));
+  add(P('The queries below are shortened to the kept metrics. The complete files are in scripts/berka.'));
+  add(H2('C.1 Metrics per loan (10_features.sql)'));
+  add(sql(SQL_FEATURES));
+  add(H2('C.2 Points, score and grade (20_score.sql)'));
+  add(sql(SQL_SCORE));
+  add(H2('C.3 Checking the result (30_validate.sql)'));
+  add(sql(SQL_VALIDATE));
+  add(P('The buckets, points, weights and thresholds are learned from the training loans by scripts/berka/fit_scorecard.js and stored in the tables scorecard_band, scorecard_weight and scorecard_param, which the queries above read.'));
 
   return body;
 }
 
 const REQUIRED = ['1. Executive summary', '2. The data', '3. Data model', '4. Method', '5. Evidence for each metric', '6. The scorecard',
-  '7. Results', '8. Worked examples', '9. Dashboard', '10. Why a scorecard and not machine learning', '11. Sensitive data and data quality', '12. Limitations and next steps', 'Appendix A. Bucket limits and points', 'Appendix B. How to reproduce'];
+  '7. Results', '8. Worked examples', '9. Dashboard', '10. Why a scorecard and not machine learning', '11. Sensitive data and data quality', '12. Limitations and next steps', 'Appendix A. Bucket limits and points', 'Appendix B. How to reproduce', 'Appendix C. Main SQL queries'];
 
 async function main() {
   const d = await load();

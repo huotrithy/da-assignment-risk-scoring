@@ -104,6 +104,13 @@ async function load() {
         points: await q(`SELECT p.*, w.weight FROM berka.loan_metric_points p JOIN berka.scorecard_weight w USING (metric) WHERE loan_id = ${id} ORDER BY w.weight DESC`),
       });
     }
+    // Data samples for the report: a few loans, and the last transactions before the first worked example.
+    d.sampleLoans = await q(`SELECT loan_id, account_id, loan_date::text, amount, duration_months, monthly_payment, status FROM berka.loan ORDER BY loan_date, loan_id LIMIT 4`);
+    d.sampleTrans = (await q(`SELECT t.trans_id, t.trans_date::text, t.type, t.operation, t.amount, t.balance, t.k_symbol
+                              FROM berka.trans t JOIN berka.loan l USING (account_id)
+                              WHERE l.loan_id = ${top} AND t.trans_date < l.loan_date - 7 ORDER BY t.trans_date DESC, t.trans_id DESC LIMIT 6`)).reverse();
+    d.sampleFeatures = (await q(`SELECT loan_id, split, months_observed, negative_balance_events, dti, income_sources, balance_volatility, balance_trend, joint_account
+                                 FROM berka.loan_features WHERE loan_id IN (${top}, ${low}) ORDER BY loan_id`));
     // Lookups both generators use.
     d.S = Object.fromEntries(d.summary.map((r) => [r.split, r]));                 // validation by split
     d.ev = Object.fromEntries(d.evidence.map((e) => [e.metric, e]));              // evidence by metric
