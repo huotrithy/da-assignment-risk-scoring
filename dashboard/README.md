@@ -1,10 +1,11 @@
 # Credit Risk Scorecard dashboard (Streamlit)
 
-Three tabs over the stored scorecard in `calculated_risk_score`:
+Four tabs over the scorecard in schema `berka` (real Berka bank loans, built by `npm run scorecard` — see scripts/berka/README.md):
 
-- **Portfolio overview** — customers scored, average score, approvals, grade distribution, score histogram with the grade cut-offs.
-- **Criteria by grade** — heatmap of average criteria points per grade.
-- **Customer drill-down** — pick a customer: metric points (re-run from `scripts/01–05`), weights, contribution, score and grade.
+- **Portfolio** — loans scored, approval rate, default rate approved vs rejected, test Gini; loans per grade; the real default rate per grade on train and test; score histogram with the thresholds.
+- **Evidence** — strength (Gini) of every candidate metric and why it was kept or dropped; default rate across each metric's value groups; correlation between metrics (duplicates); weights from each metric's strength; checks on unseen, finished and older loans; short-history check.
+- **Criteria by grade** — heatmap of average criterion points per grade.
+- **Loan drill-down** — pick a loan: value → bucket → points → weight for each metric, the 12 months of money in/out and balance before the loan, warning-sign transactions, then what really happened.
 
 ## Run with Docker (port 8502)
 
@@ -30,4 +31,10 @@ pip install -r dashboard/requirements.txt
 DATABASE_URL="postgresql://..." streamlit run dashboard/app.py
 ```
 
-The dashboard only reads data. Re-run `scripts/06_calculate_and_store_scorecard.sql` to refresh the stored scores.
+The dashboard only reads stored tables. Run `npm run scorecard` to refresh them.
+
+## Smoke test (inside the image)
+
+```
+docker run --rm --env-file .env -v "$PWD/tests:/tests" data-analytic-assignment-dashboard sh -c "pip install -q pytest && python -m pytest -q /tests/dashboard_smoke.py"
+```

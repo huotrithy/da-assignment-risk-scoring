@@ -1,148 +1,159 @@
-# Risk Scoring Methodology — Weighted Scorecard
+# Risk Scoring Methodology — Evidence-Based Scorecard
 
 ## 1. Overview
 
-This defines *how* the raw features documented in
-[`Part2_Relational_Data_Model.md`](Part2_Relational_Data_Model.md) §4 combine
-into the single `risk_score.score_value` / `risk_score.risk_grade` pair. It
-follows the standard **weighted scorecard** approach used in retail credit
-scoring (the same structure behind FICO-style scorecards):
+The scorecard gives each loan a score out of 100 (higher = safer) and a grade from A to E.
+Grades A–C are approved; D and E are rejected.
 
-```
-Criteria (category)
-  └─ Metric (measurable characteristic)
-       └─ Point band (metric value → points, via binning)
-  └─ Criteria Weight (% contribution to final score)
+The previous version built the same kind of scorecard on synthetic data, with metrics, weights and thresholds chosen
+by judgement. The new version rebuilds it on real bank data — the Berka / PKDD'99 Czech bank dataset — where
+the outcome of every loan is known. Each choice is now made by a written rule applied to the data,
+and each rule is checked on loans the scorecard has never seen.
 
-Final Score = Σ over criteria [ weight_i × avg(metric points in criteria_i) ]
-            → scaled to 300–850
-            → bucketed into risk_grade A–E
-```
-
-This mirrors real-world practice: each **criteria** groups related metrics,
-each **metric** is independently predictive and bucketed into a small number
-of bands (avoids overfitting to noisy continuous values), and **weights**
-encode which criteria matter more for default risk — calibrated by an analyst
-(or fit statistically against historical outcomes, which is what the
-bootstrap-sampled UCI good/bad label stands in for in this mock dataset).
-
-## 2. Criteria & Weights
-
-| # | Criteria | Weight | Rationale for weight |
-|---|---|---|---|
-| 1 | **Payment Behavior** (repeat borrowers only) | 35% | Strongest predictor in virtually every real scorecard — actual past repayment conduct beats any proxy signal. |
-| 2 | **Income & Capacity** | 25% | Direct measure of ability to repay; second-strongest signal. |
-| 3 | **Transaction Behavior** | 20% | Behavioral proxy for financial discipline and cash-flow stability, especially valuable for first-time borrowers with no `payment_history` yet. |
-| 4 | **Account Relationship** | 10% | Tenure/engagement as a stability proxy — weaker but still informative. |
-| 5 | **Demographics & Loan Context** | 10% | Deliberately low weight — avoids over-relying on non-behavioral factors; mainly a light adjustment. |
-
-For a **first-time applicant** (no loan history yet, so no
-`payment_history`/`delinquency_event` rows), Criteria 1's weight is
-redistributed proportionally across Criteria 2–5 (a common real-world
-"reject inference" workaround for new-to-bank applicants).
-
-## 3. Metrics per Criteria
-
-### 3.1 Payment Behavior — 35%
-
-| Metric | Source | Point Bands |
+| Item | Previous version | New version |
 |---|---|---|
-| % on-time payments | `payment_history.status` | ≥95% → 100 pts · 85–94% → 70 pts · 70–84% → 40 pts · <70% → 10 pts |
-| Delinquency severity | `delinquency_event.event_type` | none → 100 pts · 30dpd only → 60 pts · 60dpd → 30 pts · 90dpd/write_off → 0 pts |
+| Data | synthetic customers (generator) | 682 real loans, 4,500 accounts, 1,056,320 transactions |
+| Metrics | 12, chosen by judgement | 14 candidates tested; 6 kept by evidence |
+| Weights | 35/25/20/10/10, judgement | each metric's share of the total measured strength (Gini) |
+| Points | 100/70/40/10 by quartile rank | same rank points; real default rates decide the buckets and the safe direction |
+| Score scale | 300–850 (×5.5 + 300) | out of 100, no scaling |
+| Thresholds | judgement | approve only where real default rate is below average |
+| Validation | not possible (no outcome) | train/test split, Gini, default rate per grade |
 
-### 3.2 Income & Capacity — 25%
+## 2. Outcome and data window
 
-Income level and debt-to-income are scored by **population quartile**
-(bottom 25% of customers on that metric → 10 pts, top 25% → 100 pts) rather
-than fixed thresholds — see the note at the end of this section.
+- **Defaulted loan** = status B (finished, not paid) or D (running, in debt). 76 of 682 loans (11.1%).
+- **Repaid loan** = status A (finished, paid) or C (running, paid on time so far).
+- **Point in time:** every metric uses only transactions in the **12 months before the loan date**.
+  Nothing on or after the loan date is used, so the score uses only what the bank knew when it decided.
+- **Split:** the earliest 70% of loans by date (477, 64 defaulted) are the **training set** — every constant is
+  learned from them. The latest 30% (205, 12 defaulted) are the **test set**, used only to check the result.
 
-| Metric | Source | Point Bands |
-|---|---|---|
-| Monthly income level | `income_source.monthly_income` | Quartile of all customers by total monthly income: top → 100 pts · 3rd → 70 · 2nd → 40 · bottom → 10 |
-| Income diversification | count of active `income_source` rows | 2+ concurrent sources → 100 pts · 1 source → 60 pts |
-| Debt-to-income (requested amount ÷ monthly income) | `loan_application.requested_amount` ÷ `income_source.monthly_income` | Quartile by ratio (lower is better): best → 100 · 70 · 40 · worst → 10 · no application on file → 55 (neutral) |
+## 3. Candidate metrics and how they were selected
 
-### 3.3 Transaction Behavior — 20%
+Fourteen metrics were computed for every loan, grouped into the five criteria of the previous version
+(gender is decoded from the data but never used, on fairness grounds).
 
-All three sub-metrics are population-quartile scored (see note below).
-
-| Metric | Source | Point Bands |
-|---|---|---|
-| Transaction-volume "normality" | `transaction` (count, grouped by month), deviation from the population median | Quartile by distance from the median monthly count: closest → 100 · 70 · 40 · furthest → 10 (both dormant-like *and* frenetic activity end up furthest from median) |
-| Spend-to-income ratio | Σ \|`transaction.amount`\| (spend categories) ÷ income category | Quartile by ratio (lower is better): best → 100 · 70 · 40 · worst → 10 |
-| Balance trend (26-week slope) | `account_balance_history.closing_balance` via linear regression slope | Quartile by slope (higher/more positive is better): best → 100 · 70 · 40 · worst → 10 |
-
-### 3.4 Account Relationship — 10%
-
-| Metric | Source | Point Bands |
-|---|---|---|
-| Account tenure | `account.open_date` vs today | Quartile by tenure (longer is better): longest → 100 · 70 · 40 · shortest → 10 |
-| Account status | `account.status` | active → 100 pts · dormant → 40 pts · closed → 0 pts |
-
-### 3.5 Demographics & Loan Context — 10%
-
-| Metric | Source | Point Bands |
-|---|---|---|
-| Age | `customer.date_of_birth`, distance from age 42 (population "prime" center) | Quartile by \|age − 42\|: closest → 100 · 70 · 40 · furthest → 10 |
-| Requested amount vs product range | `loan_application.requested_amount` vs `loan_product.min/max_amount` | Quartile by % of range used (lower is better): best → 100 · 70 · 40 · worst → 10 · no application on file → 55 (neutral) |
-
-**Why population quartiles, not fixed thresholds:** an earlier version of
-this scorecard used fixed, judgment-based cutoffs (e.g. "spend-to-income
-<50% → 100 pts"). Against this mock dataset, most customers cluster in the
-same "good enough" band on any single metric, so the composite score barely
-spread out — nearly everyone landed in grade B/C and D/E were almost empty.
-Scoring each ratio/trend metric against the *population's own* quartile
-distribution instead guarantees genuine spread (the bottom 25% on any given
-metric always scores worst), which is also closer to how real scorecards are
-actually built — bands are cut against the observed population's deciles
-(often via Weight-of-Evidence/Information-Value analysis), not invented in
-the abstract. Payment Behavior's thresholds (§3.1) are the one exception,
-since % on-time and delinquency severity are meaningful on an absolute
-scale regardless of population — a customer who misses every payment is
-bad in any population, not just relative to their peers.
-
-## 4. Aggregation & Grading
-
-1. Compute each metric's points (0–100 scale) per its band.
-2. Average the metric points within each criteria.
-3. Weight and sum across criteria → a 0–100 composite.
-4. Linearly scale the 0–100 composite into the schema's 300–850
-   `score_value` range: `score = 300 + composite × 5.5`.
-5. Bucket into `risk_grade` (thresholds already used consistently across
-   the mock data generator and schema `CHECK` constraint):
-
-| Score range | Grade |
+| Criterion | Candidate metrics |
 |---|---|
-| 750–850 | A |
-| 680–749 | B |
-| 600–679 | C |
-| 500–599 | D |
-| 300–499 | E |
+| Payment behaviour | penalty-interest charges; overdraft (negative-balance) events |
+| Income & capacity | loan payment ÷ monthly income (DTI); number of income sources; monthly money in |
+| Balance behaviour | balance volatility; lowest balance; balance trend; spend ÷ income |
+| Account relationship | account age; has a card; joint account (two users) |
+| Demographics | age; district unemployment |
 
-Loan approval policy (also already reflected in the mock data): applications
-scoring **≥600 (grade A/B/C)** are approved; **D/E are rejected** and never
-progress to `loan_account`.
+Selection rules, applied on the training loans:
 
-**Simplification vs. real-world practice:** many real scorecards route the
-borderline grade (here, C) to manual/underwriter review rather than
-auto-approving it alongside A/B, with only the clear-cut top grades approved
-straight through. This assignment uses a simpler binary approve/reject split
-(A/B/C vs. D/E) to keep the mock dataset and approval logic easy to reason
-about; the schema's `loan_application.status` CHECK constraint does allow a
-`'pending'` value if a three-way policy were introduced later.
+1. **Strength:** Gini of the metric against the outcome. Pair every repaid loan with every defaulted
+   loan; Gini = 2 × (share of pairs in which the metric points at the defaulted loan) − 1, so 0 = coin
+   flip and 1 = perfect. |Gini| < 0.10 → dropped as *weak*.
+2. **Duplicates:** Spearman rank correlation between metrics. |r| ≥ 0.5 → the two metrics measure
+   the same behaviour; the weaker one is dropped as a *duplicate*.
+3. **Usable buckets:** if the default rate cannot be made to move in one direction across at least two
+   buckets, the metric is dropped.
 
-## 5. Relationship to the Mock Dataset
+Result (live values in `berka.metric_evidence`):
 
-The current `generate_data.js` does not literally run this formula — it
-bootstrap-samples a score/grade pair from the UCI German Credit Data good/bad
-label, then generates internally-consistent downstream data (payments,
-delinquencies) conditioned on that grade. This is intentional and disclosed
-in [`Part2_Relational_Data_Model.md`](Part2_Relational_Data_Model.md) §5 as a
-known limitation: it guarantees *realistic, self-consistent* mock data
-without requiring the full scorecard to be computed at generation time.
+| Metric | Gini (train) | Verdict |
+|---|---|---|
+| Balance volatility | 0.56 | kept |
+| Lowest balance | −0.51 | duplicate of balance volatility (r −0.58) |
+| Overdraft events | 0.31 | kept |
+| Penalty-interest charges | 0.29 | duplicate of overdraft events (r 0.92) |
+| Loan payment ÷ monthly income | 0.25 | kept |
+| Joint account | −0.25 | kept |
+| Balance trend | −0.19 | kept |
+| Number of income sources | −0.17 | kept |
+| Account age | −0.10 | duplicate of balance trend (r −0.50, exactly at the limit) |
+| Spend ÷ income | 0.07 | weak |
+| Monthly money in | −0.04 | weak |
+| Has a card | −0.04 | weak |
+| District unemployment | 0.04 | weak |
+| Age | 0.03 | weak |
 
-For **Part 3**, this methodology is what the SQL queries should implement
-directly against the live tables (e.g., computing spend-to-income ratio,
-% on-time payments, balance trend per customer) — demonstrating the
-scorecard logic as a set of analytic queries over the schema, independent of
-how the mock `risk_score` rows were originally seeded.
+Positive Gini = higher value is riskier; negative = higher value is safer.
+
+## 4. Buckets and points
+
+For each kept metric the training values are cut at their quartiles (two buckets for yes/no metrics).
+Adjacent buckets are merged until the default rate moves in one direction. Points are given by rank:
+the bucket with the lowest default rate gets 100 and the one with the highest gets 10, evenly spaced in
+between (100/70/40/10 for four buckets, 100/55/10 for three, 100/10 for two). A missing value goes to
+the riskier end.
+
+The cut points are fixed constants (`berka.scorecard_band`), so a customer's points do not depend on
+who else is scored in the same batch.
+
+## 5. Weights
+
+Each metric's weight = its strength (|Gini| on the training loans) ÷ the total strength of the kept
+metrics, so a stronger metric counts more and the weights sum to 100%. A criterion's weight is the sum
+of its metrics' weights.
+
+| Metric | Criterion | Strength | Weight |
+|---|---|---|---|
+| Balance volatility | Balance behaviour | 0.56 | 32.4% |
+| Overdraft events | Payment behaviour | 0.31 | 18.0% |
+| Joint account | Account relationship | 0.25 | 14.6% |
+| Loan payment ÷ monthly income | Income & capacity | 0.25 | 14.3% |
+| Balance trend | Balance behaviour | 0.19 | 10.8% |
+| Number of income sources | Income & capacity | 0.17 | 9.8% |
+
+Criteria: Balance behaviour 43.2%, Income & capacity 24.1%, Payment behaviour 18.0%,
+Account relationship 14.6%, Demographics 0%. The previous version put payment first by judgement;
+on the real loans balance behaviour separates repaid from defaulted loans best.
+
+## 6. Short history
+
+Money-based metrics are averaged over the months actually elapsed in the window (from the later of
+account opening or 365 days before the loan, to the loan date). Metrics measured over the window
+(overdraft events, balance volatility, DTI) are less reliable when only a few months were observed. Their points are pulled toward the training average:
+
+    points = average + (points − average) × months ÷ (months + k)
+
+k is chosen from {3, 6, 12} as the value giving the best training Gini (result: k = 3).
+A customer with a short clean record therefore cannot reach the full 100.
+
+## 7. Score, grades and approval
+
+    score = Σ weight × points      (higher = safer, maximum 100)
+
+Thresholds are set on the training scores:
+
+- **Approve line:** walk the score deciles from the top; approve a decile only while its own default rate
+  is below the portfolio average (13.4% on the training loans). The approve line is the bottom of the
+  last decile that passes.
+- **A / B / C:** the approved range split into thirds. **D / E:** the rejected range split in half.
+- Each cut sits midway between the boundary score and the next lower score, so rounding cannot move a
+  loan across it.
+
+Current thresholds: A ≥ 72.58, B ≥ 62.91, C ≥ 57.78 (approve), D ≥ 48.34, otherwise E.
+
+## 8. Validation
+
+| | Gini | Loans | Defaulted | Approved | Default rate if approved | Default rate if rejected |
+|---|---|---|---|---|---|---|
+| Train | 0.70 | 477 | 64 | 60.2% | 3.8% | 27.9% |
+| Test | 0.91 | 205 | 12 | 67.8% | 0.0% | 18.2% |
+
+Default rate by grade A→E: train 0.0 / 2.8 / 9.4 / 14.7 / 41.1%; test 0.0 / 0.0 / 0.0 / 3.2 / 31.4%.
+
+The test set has only 12 defaulted loans, so its Gini is a direction, not a precise number. Running loans
+may still default, so the score is also checked on finished loans only (train Gini 0.71; the test set has
+only 9 finished loans and none of them defaulted, so it cannot be checked this way) and on loans issued
+at least a year before the data ends (test Gini 0.92, 47 loans). Customers with less than six months of
+history are approved less often (33.3%) than those with a year or more (69.9%).
+
+## 9. Limitations
+
+- Small number of defaulted loans (76; 12 in the test set).
+- Data from one Czech bank, 1993–1998; the method transfers, the exact numbers may not.
+- No declared income — income is estimated from money coming into the account.
+- Each account has at most one loan, so past loan repayment cannot be measured directly;
+  overdraft and penalty interest are the closest available signal.
+- Joint account carries a weight of 14.6% because none of the joint-account training loans defaulted;
+  with more data this weight could change.
+- The data has no date for when a second user joined an account, so joint-account status may have
+  changed after the loan date — the only kept metric that cannot be checked point in time.
+
+Pipeline, tables and run commands: `scripts/berka/README.md`.

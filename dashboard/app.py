@@ -1,12 +1,12 @@
-"""Credit risk scorecard dashboard.
+"""Credit risk scorecard dashboard (real bank data: Berka / PKDD'99).
 
-Reads the stored scorecard (calculated_risk_score, written by scripts/06) and
-re-runs the read-only metric scripts 01-05 for the customer drill-down.
+Reads only stored tables in schema `berka` (built by scripts/berka/run_all.js):
+loan_score, loan_metric_points, loan_features, metric_evidence, metric_correlation,
+scorecard_band, scorecard_weight, criterion_weight, scorecard_param and the validation views.
 
 Run locally:  DATABASE_URL=postgresql://... streamlit run dashboard/app.py --server.port 8502
 """
 import os
-from pathlib import Path
 
 import altair as alt
 import pandas as pd
@@ -17,46 +17,47 @@ import streamlit as st
 st.set_page_config(page_title="Credit Risk Scorecard", page_icon="📊", layout="wide")
 
 # --------------------------------------------------------------------------- constants
-# Same scorecard constants as scripts/06_calculate_and_store_scorecard.sql
-WEIGHTS = {"payment": 0.35, "income": 0.25, "transaction": 0.20, "account": 0.10, "demographics": 0.10}
-CRITERIA = [  # key, label, column in calculated_risk_score
-    ("payment", "Payment Behaviour", "payment_behavior_points"),
-    ("income", "Income & Capacity", "income_capacity_points"),
-    ("transaction", "Transaction Behaviour", "transaction_behavior_points"),
-    ("account", "Account Relationship", "account_relationship_points"),
-    ("demographics", "Demographics & Loan", "demographics_points"),
-]
 GRADES = ["A", "B", "C", "D", "E"]
-GRADE_RANGE = {"A": "750–850", "B": "680–749", "C": "600–679", "D": "500–599", "E": "300–499"}
-APPROVED = {"A", "B", "C"}
+CRITERIA = {  # key -> label
+    "payment": "Payment behaviour",
+    "income": "Income & capacity",
+    "balance": "Balance behaviour",
+    "relationship": "Account relationship",
+    "demographics": "Demographics",
+}
+METRIC_LABEL = {
+    "penalty_events": "Penalty-interest charges",
+    "negative_balance_events": "Overdraft (negative-balance) events",
+    "dti": "Loan payment ÷ monthly income",
+    "income_sources": "Number of income sources",
+    "monthly_inflow": "Monthly money in",
+    "balance_volatility": "Balance volatility",
+    "min_balance": "Lowest balance",
+    "balance_trend": "Balance trend",
+    "spend_to_income": "Spend ÷ income",
+    "history_months": "Account age (months)",
+    "has_card": "Has a card",
+    "joint_account": "Joint account (two users)",
+    "age_at_loan": "Age",
+    "district_unemployment": "District unemployment",
+}
+VERDICT_LABEL = {
+    "kept": "Kept",
+    "dropped_weak": "Dropped: weak",
+    "dropped_duplicate": "Dropped: duplicate",
+}
 
-# Colour = decision (validated colour-blind safe pair); grade letters are always labelled.
+# Colour = decision (validated colour-blind-safe pair); grade letters are always labelled.
 APPROVE_COLOR, REJECT_COLOR = "#2a78d6", "#e34948"
 DECISION_SCALE = alt.Scale(domain=["Approve", "Reject"], range=[APPROVE_COLOR, REJECT_COLOR])
-SPEND_COLOR = "#eb6834"  # categorical slot 2 — pairs with blue (validated)
-EXAMPLES = {"A": 268, "B": 3, "E": 719}  # top score · worked example 1 on the slides · lowest score
+OUT_COLOR = "#eb6834"      # categorical slot 2 — pairs with blue (validated)
+MUTED = "#a3a29c"          # dropped metrics (recessive)
+KEPT_SCALE = alt.Scale(domain=["Kept", "Dropped"], range=[APPROVE_COLOR, MUTED])
+BINARY = ("has_card", "joint_account")
+RATIO = ("dti", "balance_volatility", "balance_trend", "spend_to_income")   # shown with 2 decimals
 BLUE_RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
-
-SQL_DIR = Path(os.environ.get("SQL_DIR", Path(__file__).resolve().parent.parent / "scripts"))
-METRIC_SCRIPTS = {
-    "payment": "01_metric_payment_behavior.sql",
-    "income": "02_metric_income_capacity.sql",
-    "transaction": "03_metric_transaction_behavior.sql",
-    "account": "04_metric_account_relationship.sql",
-    "demographics": "05_metric_demographics.sql",
-}
-# Short names for the one-line summary in the drill-down table (same wording as the slides)
-SHORT = {
-    "% on-time payments": "On-time", "Worst delinquency": "Delinquency",
-    "Monthly income": "Income level", "Income types": "Diversification",
-    "Debt-to-income (loan ÷ monthly income)": "DTI",
-    "Avg transactions per month": "Volume", "Spend-to-income": "Spend ratio", "Balance trend": "Balance trend",
-    "Account tenure (years)": "Tenure", "Account status": "Status",
-    "Age": "Age", "Requested amount, % of product range": "Amount vs range",
-}
-SEVERITY = {0: "none", 1: "30 days", 2: "60 days", 3: "90 days", 4: "write-off"}
-SEVERITY_RANK = {"30dpd": 1, "60dpd": 2, "90dpd": 3, "write_off": 4}
-SEVERITY_NAME = {1: "30 days late", 2: "60 days late", 3: "90 days late", 4: "written off"}
+DIVERGING = alt.Scale(domain=[-1, 0, 1], range=["#256abf", "#f0efec", "#e34948"], interpolate="rgb")
+DASHBOARD_NOTE = "Colour shows the decision: blue = approve (A–C), red = reject (D–E)."
 
 
 # --------------------------------------------------------------------------- data
@@ -80,33 +81,71 @@ def connect():
         st.stop()
 
 
-def query(sql: str, params=None) -> pd.DataFrame:
-    with connect() as conn, conn.cursor() as cur:
-        cur.execute(sql, params)
+def query(conn, sql: str, params=None) -> pd.DataFrame:
+    with conn.cursor() as cur:
+        try:
+            cur.execute(sql, params)
+        except psycopg.errors.UndefinedTable:
+            st.error("The scorecard tables are missing. Run `npm run scorecard` (scripts/berka/README.md) first.")
+            st.stop()
         cols = [c.name for c in cur.description]
         df = pd.DataFrame(cur.fetchall(), columns=cols)
-    # NUMERIC comes back as Decimal — convert so pandas/altair can do maths on it
-    for c in df.columns:
+    for c in df.columns:  # NUMERIC comes back as Decimal
         if df[c].map(lambda v: v.__class__.__name__ == "Decimal").any():
             df[c] = pd.to_numeric(df[c])
     return df
 
 
 @st.cache_data(ttl=600, show_spinner="Loading scorecard…")
-def load_scores() -> pd.DataFrame:
-    df = query("SELECT * FROM calculated_risk_score ORDER BY customer_id")
-    df["decision"] = df["calculated_risk_grade"].map(lambda g: "Approve" if g in APPROVED else "Reject")
-    df["borrower"] = df["payment_behavior_points"].isna().map({True: "First-time", False: "Repeat"})
-    return df
+def load_all() -> dict:
+    sql = {
+        "scores": """SELECT s.*, f.months_observed
+                     FROM berka.loan_score s JOIN berka.loan_features f USING (loan_id) ORDER BY s.loan_id""",
+        "evidence": "SELECT * FROM berka.metric_evidence",
+        "corr": "SELECT * FROM berka.metric_correlation",
+        "weights": "SELECT * FROM berka.scorecard_weight ORDER BY weight DESC",
+        "crit_w": "SELECT * FROM berka.criterion_weight",
+        "params": "SELECT * FROM berka.scorecard_param",
+        "summary": "SELECT * FROM berka.validation_summary",
+        "by_grade": "SELECT * FROM berka.validation_by_grade",
+        "finished": "SELECT * FROM berka.validation_finished",
+        "history": "SELECT * FROM berka.validation_history",
+    }
+    with connect() as conn:
+        d = {k: query(conn, q) for k, q in sql.items()}
+    d["scores"]["decision"] = d["scores"]["approved"].map({True: "Approve", False: "Reject"})
+    d["param"] = dict(zip(d["params"]["name"], d["params"]["value"]))
+    return d
 
 
-@st.cache_data(ttl=600, show_spinner="Running metric scripts 01–05…")
-def load_metrics() -> dict:
-    out = {}
-    for key, name in METRIC_SCRIPTS.items():
-        sql = (SQL_DIR / name).read_text(encoding="utf-8").strip().rstrip(";")
-        out[key] = query(sql).set_index("customer_id")
-    return out
+@st.cache_data(ttl=600, show_spinner="Loading loan data…")
+def load_loan(loan_id: int) -> dict:
+    """Everything the bank could see before this loan: the 12-month window. No personal data shown."""
+    q = {
+        "points": """SELECT p.metric, p.raw_value, p.band, p.band_points, p.points, w.weight, w.criterion,
+                            b.lower, b.upper
+                     FROM berka.loan_metric_points p
+                     JOIN berka.scorecard_weight w USING (metric)
+                     JOIN berka.scorecard_band b ON b.metric = p.metric AND b.band = p.band
+                     WHERE p.loan_id = %(l)s ORDER BY w.weight DESC""",
+        # same window as scripts/berka/10_features.sql
+        "window": """SELECT t.trans_id, t.trans_date, t.type, t.amount, t.balance, t.k_symbol
+                     FROM berka.trans t JOIN berka.loan l USING (account_id)
+                     WHERE l.loan_id = %(l)s AND t.trans_date < l.loan_date AND t.trans_date >= l.loan_date - 365
+                     ORDER BY t.trans_date, t.trans_id""",
+        "loan": """SELECT l.loan_date, l.amount, l.duration_months, l.monthly_payment, a.open_date
+                   FROM berka.loan l JOIN berka.account a USING (account_id) WHERE l.loan_id = %(l)s""",
+    }
+    with connect() as conn:
+        d = {k: query(conn, sql, {"l": int(loan_id)}) for k, sql in q.items()}
+    w = d.pop("window")
+    w["month"] = pd.to_datetime(w["trans_date"]).dt.to_period("M").dt.to_timestamp()
+    d["monthly"] = (w.assign(money_in=w["amount"].where(w["type"] == "credit", 0),
+                             money_out=w["amount"].where(w["type"] == "withdrawal", 0))
+                    .groupby("month", as_index=False)[["money_in", "money_out"]].sum())
+    d["balance"] = w.groupby("month", as_index=False).last()[["month", "balance"]]   # last transaction of the month
+    d["events"] = w[(w["k_symbol"] == "penalty_interest") | (w["balance"] < 0)][["trans_date", "k_symbol", "amount", "balance"]]
+    return d
 
 
 def tile(col, label, value, note=None):
@@ -116,474 +155,317 @@ def tile(col, label, value, note=None):
             st.caption(note)
 
 
-@st.cache_data(ttl=600, show_spinner="Loading customer data…")
-def load_customer(cid: int) -> dict:
-    """Raw rows for one customer — the evidence behind each criteria. No name / national_id (PII)."""
-    q = {
-        "profile": "SELECT date_of_birth, customer_since_date FROM customer WHERE customer_id = %(c)s",
-        "income": """SELECT income_type, monthly_income, effective_date FROM income_source
-                     WHERE customer_id = %(c)s ORDER BY effective_date DESC""",
-        "applications": """SELECT la.application_date, lp.product_name, la.requested_amount, lp.min_amount,
-                                  lp.max_amount, lp.tenor_months, la.status
-                           FROM loan_application la JOIN loan_product lp USING (product_id)
-                           WHERE la.customer_id = %(c)s ORDER BY la.application_date DESC""",
-        "loans": """SELECT ln.loan_account_id, lp.product_name, ln.principal_amount, ln.disbursement_date,
-                           ln.outstanding_balance, ln.status
-                    FROM loan_account ln JOIN loan_application la USING (application_id)
-                    JOIN loan_product lp USING (product_id) WHERE la.customer_id = %(c)s""",
-        "payments": """SELECT ph.due_date, ph.amount_due, ph.amount_paid, ph.status
-                       FROM payment_history ph JOIN loan_account ln USING (loan_account_id)
-                       JOIN loan_application la USING (application_id)
-                       WHERE la.customer_id = %(c)s ORDER BY ph.due_date""",
-        "delinquency": """SELECT de.event_date, de.event_type, de.days_past_due
-                          FROM delinquency_event de JOIN loan_account ln USING (loan_account_id)
-                          JOIN loan_application la USING (application_id)
-                          WHERE la.customer_id = %(c)s ORDER BY de.event_date""",
-        "accounts": """SELECT account_id, account_type, open_date, status FROM account
-                       WHERE customer_id = %(c)s ORDER BY open_date""",
-        "monthly": """SELECT date_trunc('month', t.transaction_date)::date AS month,
-                             COALESCE(SUM(t.amount) FILTER (WHERE t.category = 'income'), 0) AS income,
-                             COALESCE(-SUM(t.amount) FILTER (WHERE t.category <> 'income'), 0) AS spending,
-                             COUNT(*) AS transactions
-                      FROM "transaction" t JOIN account a USING (account_id)
-                      WHERE a.customer_id = %(c)s GROUP BY 1 ORDER BY 1""",
-        "categories": """SELECT t.category, -SUM(t.amount) AS total, COUNT(*) AS transactions
-                         FROM "transaction" t JOIN account a USING (account_id)
-                         WHERE a.customer_id = %(c)s AND t.category <> 'income'
-                         GROUP BY 1 ORDER BY 2 DESC""",
-        "balance": """SELECT bh.snapshot_date, SUM(bh.closing_balance) AS balance
-                      FROM account_balance_history bh JOIN account a USING (account_id)
-                      WHERE a.customer_id = %(c)s GROUP BY 1 ORDER BY 1""",
-    }
-    return {k: query(sql, {"c": int(cid)}) for k, sql in q.items()}
+def pct(v, digits=1) -> str:
+    return "—" if v is None or pd.isna(v) else f"{100 * v:.{digits}f}%"
 
 
-def share_below(series: pd.Series, value) -> float:
-    """Share of customers with a lower value — 'higher than X% of customers'."""
-    s = series.dropna()
-    return float((s < value).mean()) if len(s) and pd.notna(value) else float("nan")
+def value_text(metric, v) -> str:
+    if v is None or pd.isna(v):
+        return "missing"
+    if metric in BINARY:
+        return "yes" if v else "no"
+    return f"{v:,.0f}" if float(v).is_integer() or abs(v) >= 10 else f"{v:,.2f}"
 
 
-def money(v) -> str:
-    return "—" if v is None or pd.isna(v) else f"{v:,.0f}"
+def band_text(lower, upper, metric) -> str:
+    if metric in BINARY:
+        return "yes" if lower is not None and not pd.isna(lower) else "no"
+    fmt = (lambda v: f"{v:,.2f}") if metric in RATIO else (lambda v: f"{v:,.0f}")
+    lo = None if lower is None or pd.isna(lower) else fmt(lower)
+    hi = None if upper is None or pd.isna(upper) else fmt(upper)
+    if lo is None and hi is None:
+        return "any value"
+    if lo is None:
+        return f"≤ {hi}"
+    if hi is None:
+        return f"> {lo}"
+    return f"> {lo} and ≤ {hi}"
 
 
-def effective_weights(has_payment: bool) -> dict:
-    if has_payment:
-        return dict(WEIGHTS)
-    rest = 1 - WEIGHTS["payment"]  # 0.65 — Payment's 35% shared out proportionally
-    return {k: (0.0 if k == "payment" else w / rest) for k, w in WEIGHTS.items()}
-
-
-scores = load_scores()
+data = load_all()
+scores, P = data["scores"], data["param"]
+summ = data["summary"].set_index("split")
 
 # --------------------------------------------------------------------------- header
 st.title("Credit Risk Scorecard")
 st.caption(
-    f"{len(scores):,} customers scored by the SQL scorecard (scripts 01–06). "
-    f"Stored run: {pd.to_datetime(scores['calculated_date']).max():%d %b %Y}. "
-    "Colour shows the decision: blue = approve (A–C), red = reject (D–E)."
+    f"{len(scores):,} real loans (Berka Czech bank data, 1993–1998), each scored with only the 12 months of "
+    "account history before the loan start date. Weights, buckets and thresholds were learned on the earliest 70% of loans "
+    f"(train) and checked on the latest 30% (test). {DASHBOARD_NOTE}"
 )
 
-tab_overview, tab_criteria, tab_customer = st.tabs(["Portfolio overview", "Criteria by grade", "Customer drill-down"])
+tab_port, tab_ev, tab_crit, tab_loan = st.tabs(["Portfolio", "Evidence", "Criteria by grade", "Loan drill-down"])
 
-# =========================================================================== overview
-with tab_overview:
-    n = len(scores)
-    approved = (scores["decision"] == "Approve").sum()
+# =========================================================================== portfolio
+with tab_port:
+    n, n_bad = len(scores), int(scores["is_bad"].sum())
     c1, c2, c3, c4 = st.columns(4)
-    tile(c1, "Customers scored", f"{n:,}")
-    tile(c2, "Average score", f"{scores['calculated_score_value'].mean():.0f}",
-         f"median {scores['calculated_score_value'].median():.0f} · range "
-         f"{scores['calculated_score_value'].min()}–{scores['calculated_score_value'].max()}")
-    tile(c3, "Approved (A–C)", f"{approved:,}", f"{approved / n:.0%} of customers · {n - approved:,} rejected")
-    tile(c4, "Repeat borrowers", f"{(scores['borrower'] == 'Repeat').sum():,}",
-         f"{(scores['borrower'] == 'First-time').sum():,} first-time applicants")
+    tile(c1, "Loans scored", f"{n:,}", f"{n_bad} defaulted ({n_bad / n:.1%}) · score 0–100")
+    tile(c2, "Would be approved (A–C)", pct(scores["approved"].mean(), 0),
+         f"approve when score ≥ {P['approve_cutoff']:.1f}")
+    tile(c3, "Default rate: approved vs rejected",
+         f"{pct(scores.loc[scores.approved, 'is_bad'].mean())} vs {pct(scores.loc[~scores.approved, 'is_bad'].mean())}",
+         "share of loans that defaulted (status B or D)")
+    tile(c4, "Gini on unseen loans (test)", f"{summ.loc['test', 'gini']:.2f}",
+         f"train {summ.loc['train', 'gini']:.2f} · test has only {int(summ.loc['test', 'n_bad'])} defaulted loans")
 
     left, right = st.columns(2)
     with left:
-        st.subheader("Customers per grade")
-        g = (scores.groupby("calculated_risk_grade").size().reindex(GRADES, fill_value=0)
-             .rename_axis("grade").reset_index(name="customers"))
-        g["share"] = g["customers"] / n
-        g["decision"] = g["grade"].map(lambda x: "Approve" if x in APPROVED else "Reject")
-        g["score_range"] = g["grade"].map(GRADE_RANGE)
+        st.subheader("Loans per grade")
+        g = scores.groupby(["grade", "decision"]).size().reset_index(name="loans")
         base = alt.Chart(g).encode(x=alt.X("grade:N", sort=GRADES, title="Grade", axis=alt.Axis(labelAngle=0)))
         bars = base.mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=56).encode(
-            y=alt.Y("customers:Q", title="Customers"),
+            y=alt.Y("loans:Q", title="Loans"),
             color=alt.Color("decision:N", scale=DECISION_SCALE, legend=alt.Legend(title=None, orient="top")),
-            tooltip=[alt.Tooltip("grade:N", title="Grade"), alt.Tooltip("score_range:N", title="Score"),
-                     alt.Tooltip("customers:Q", title="Customers"), alt.Tooltip("share:Q", title="Share", format=".1%"),
-                     alt.Tooltip("decision:N", title="Decision")],
-        )
-        labels = base.mark_text(dy=-8, fontSize=13).encode(y="customers:Q", text="customers:Q")
-        st.altair_chart((bars + labels).properties(height=340), width="stretch")
+            tooltip=[alt.Tooltip("grade:N", title="Grade"), alt.Tooltip("loans:Q", title="Loans"),
+                     alt.Tooltip("decision:N", title="Decision")])
+        st.altair_chart((bars + base.mark_text(dy=-8, fontSize=13).encode(y="loans:Q", text="loans:Q"))
+                        .properties(height=320), width="stretch")
 
     with right:
-        st.subheader("Score distribution")
-        h = scores[["calculated_score_value", "calculated_risk_grade", "decision"]].copy()
-        h["score_from"] = (h["calculated_score_value"] // 10) * 10
-        h = h.groupby(["score_from", "calculated_risk_grade", "decision"]).size().reset_index(name="customers")
-        h["score_to"] = h["score_from"] + 10
-        h["score_bin"] = h["score_from"].map(lambda b: f"{b}–{b + 9}")
-        # no cornerRadius here: it hides pre-binned bars in Vega-Lite
-        hist = alt.Chart(h).mark_bar(stroke="white", strokeWidth=1).encode(
-            x=alt.X("score_from:Q", bin="binned", title="Score (bins of 10)", scale=alt.Scale(domain=[450, 820])),
-            x2="score_to:Q",
-            y=alt.Y("customers:Q", title="Customers"),
+        st.subheader("What really happened, by grade")
+        bg = data["by_grade"].copy()
+        bg["decision"] = bg["grade"].map(lambda x: "Approve" if x in "ABC" else "Reject")
+        bg["split_label"] = bg["split"].map({"train": "Train (learned from)", "test": "Test (unseen)"})
+        bg["label"] = bg["bad_rate"].map(lambda v: pct(v, 0))
+        base = alt.Chart(bg).encode(x=alt.X("grade:N", sort=GRADES, title=None, axis=alt.Axis(labelAngle=0)))
+        bars = base.mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=34).encode(
+            y=alt.Y("bad_rate:Q", title="Default rate (share of loans that defaulted)", axis=alt.Axis(format="%")),
             color=alt.Color("decision:N", scale=DECISION_SCALE, legend=None),
-            tooltip=[alt.Tooltip("score_bin:N", title="Score"), alt.Tooltip("calculated_risk_grade:N", title="Grade"),
-                     alt.Tooltip("customers:Q", title="Customers")],
-        )
-        cut = pd.DataFrame({"score": [500, 600, 680, 750], "label": ["D | E", "C | D  (approve ≥ 600)", "B | C", "A | B"]})
-        rules = alt.Chart(cut).mark_rule(strokeDash=[4, 3], color="#8c8c8c").encode(
-            x="score:Q", tooltip=[alt.Tooltip("label:N", title="Grade cut-off"), alt.Tooltip("score:Q", title="Score")])
-        st.altair_chart((hist + rules).properties(height=340), width="stretch")
-        st.caption("Dashed lines are the grade cut-offs (500, 600, 680, 750).")
+            tooltip=[alt.Tooltip("split_label:N", title="Set"), alt.Tooltip("grade:N", title="Grade"),
+                     alt.Tooltip("n:Q", title="Loans"), alt.Tooltip("n_bad:Q", title="Defaulted"),
+                     alt.Tooltip("bad_rate:Q", title="Default rate", format=".1%")])
+        chart = (bars + base.mark_text(dy=-8, fontSize=12).encode(y="bad_rate:Q", text="label:N")) \
+            .properties(height=280, width=230).facet(column=alt.Column("split_label:N", title=None, sort="descending"))
+        st.altair_chart(chart)
+        st.caption("Default rate rises from A to E on both sets — the grades sort real risk. "
+                   f"Test numbers rest on {int(summ.loc['test', 'n_bad'])} defaulted loans, so read them as a direction, not a precise rate.")
 
-    with st.expander("Grade table"):
-        st.dataframe(
-            g.assign(share=lambda d: (d["share"] * 100).round(1))
-             .rename(columns={"grade": "Grade", "score_range": "Score range", "customers": "Customers",
-                              "share": "Share (%)", "decision": "Decision"})
-             [["Grade", "Score range", "Customers", "Share (%)", "Decision"]],
-            hide_index=True, width="stretch")
+    st.subheader("Score distribution")
+    h = scores[["score", "decision"]].copy()
+    h["score_from"] = (h["score"] // 5) * 5
+    h = h.groupby(["score_from", "decision"]).size().reset_index(name="loans")
+    h["score_to"] = h["score_from"] + 5
+    h["score_bin"] = h["score_from"].map(lambda b: f"{b:.0f}–{b + 5:.0f}")
+    hist = alt.Chart(h).mark_bar(stroke="white", strokeWidth=1).encode(  # no cornerRadius: hides binned bars
+        x=alt.X("score_from:Q", bin="binned", title="Score (0–100, bins of 5)", scale=alt.Scale(domain=[0, 100])),
+        x2="score_to:Q", y=alt.Y("loans:Q", title="Loans"),
+        color=alt.Color("decision:N", scale=DECISION_SCALE, legend=None),
+        tooltip=[alt.Tooltip("score_bin:N", title="Score"), alt.Tooltip("loans:Q", title="Loans")])
+    cut = pd.DataFrame({"score": [P["grade_D"], P["grade_C"], P["grade_B"], P["grade_A"]],
+                        "label": ["D | E", "C | D (approve line)", "B | C", "A | B"]})
+    rules = alt.Chart(cut).mark_rule(strokeDash=[4, 3], color="#8c8c8c").encode(
+        x="score:Q", tooltip=[alt.Tooltip("label:N", title="Grade threshold"), alt.Tooltip("score:Q", title="Score", format=".1f")])
+    st.altair_chart((hist + rules).properties(height=260), width="stretch")
+    st.caption(f"Dashed lines are the grade thresholds: A ≥ {P['grade_A']:.1f}, B ≥ {P['grade_B']:.1f}, "
+               f"C ≥ {P['grade_C']:.1f}, D ≥ {P['grade_D']:.1f}. The approve line is where a score decile's real default rate "
+               f"stops being below the average ({P['portfolio_bad_rate']:.1%}).")
 
-# =========================================================================== criteria
-with tab_criteria:
-    st.subheader("Average criteria points by grade")
-    st.caption(
-        "Each cell is the average points (0–100) that customers in that grade scored on that criteria — darker = higher. "
-        "Payment Behaviour averages cover repeat borrowers only. Grades are calculated from these points, "
-        "so this shows what drives a grade, not proof that the model is right."
-    )
-    long = (scores.melt(id_vars=["calculated_risk_grade"], value_vars=[c for _, _, c in CRITERIA],
-                        var_name="col", value_name="points").dropna())
-    label_of = {c: f"{lbl} ({WEIGHTS[k]:.0%})" for k, lbl, c in CRITERIA}
-    order = [label_of[c] for _, _, c in CRITERIA]
-    long["criteria"] = long["col"].map(label_of)
-    heat = (long.groupby(["calculated_risk_grade", "criteria"])["points"]
-            .agg(avg="mean", customers="count").reset_index())
-    base = alt.Chart(heat).encode(
-        x=alt.X("criteria:N", sort=order, title=None, axis=alt.Axis(labelAngle=0, labelLimit=180)),
-        y=alt.Y("calculated_risk_grade:N", sort=GRADES, title="Grade"),
-    )
-    cells = base.mark_rect(stroke="white", strokeWidth=2).encode(
-        color=alt.Color("avg:Q", scale=alt.Scale(domain=[0, 100], range=BLUE_RAMP),
-                        legend=alt.Legend(title="Avg points", orient="right")),
-        tooltip=[alt.Tooltip("calculated_risk_grade:N", title="Grade"), alt.Tooltip("criteria:N", title="Criteria"),
-                 alt.Tooltip("avg:Q", title="Average points", format=".1f"),
-                 alt.Tooltip("customers:Q", title="Customers with a value")],
-    )
-    text = base.mark_text(fontSize=14, fontWeight="bold").encode(
-        text=alt.Text("avg:Q", format=".1f"),
-        color=alt.condition("datum.avg > 55", alt.value("white"), alt.value("#0b0b0b")),
-    )
-    st.altair_chart((cells + text).properties(height=330), width="stretch")
+# =========================================================================== evidence
+with tab_ev:
+    ev = data["evidence"].copy()
+    ev["Metric"] = ev["metric"].map(METRIC_LABEL)
+    ev["Criterion"] = ev["criterion"].map(CRITERIA)
+    ev["strength"] = ev["gini_train"].abs()
+    ev["Verdict"] = ev["verdict"].map(VERDICT_LABEL)
+    ev["status"] = ev["verdict"].map(lambda v: "Kept" if v == "kept" else "Dropped")
 
-    st.markdown(
-        "- **Payment Behaviour is the big divider** — a bad repayment record pushes a borrower down to D/E.\n"
-        "- **Income and Demographics fall steadily from A to E** — they decide where a customer lands across the range.\n"
-        "- **Account Relationship barely moves** — a light adjustment, as its 10% weight intends."
-    )
-    with st.expander("Weights"):
-        w = pd.DataFrame([{"Criteria": lbl, "Weight": f"{WEIGHTS[k]:.0%}",
-                           "First-time applicant weight": "—" if k == "payment" else f"{WEIGHTS[k] / 0.65:.1%}"}
-                          for k, lbl, _ in CRITERIA])
-        st.dataframe(w, hide_index=True, width="stretch")
-        st.caption("First-time applicants have no payment history, so Payment's 35% is shared out: each other weight ÷ 0.65.")
+    st.subheader("1 · Does each metric separate repaid loans from defaulted ones?")
+    st.caption("Strength = |Gini| on the training loans: 0 = no better than a coin flip, 1 = perfect. "
+               "Metrics under 0.10 were dropped as weak.")
+    order = ev.sort_values("strength", ascending=False)["Metric"].tolist()
+    bars = alt.Chart(ev).mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, size=16).encode(
+        y=alt.Y("Metric:N", sort=order, title=None, axis=alt.Axis(labelLimit=260)),
+        x=alt.X("strength:Q", title="Strength (|Gini|, train)", scale=alt.Scale(domain=[0, 0.7])),
+        color=alt.Color("status:N", scale=KEPT_SCALE,
+                        legend=alt.Legend(title=None, orient="top")),
+        tooltip=["Metric:N", "Criterion:N", alt.Tooltip("gini_train:Q", title="Gini (train)", format=".2f"),
+                 "Verdict:N", alt.Tooltip("reason:N", title="Why")])
+    rule = alt.Chart(pd.DataFrame({"x": [0.10]})).mark_rule(strokeDash=[4, 3], color="#8c8c8c").encode(x="x:Q")
+    st.altair_chart((bars + rule).properties(height=420), width="stretch")
 
-# =========================================================================== customer
-with tab_customer:
-    st.session_state.setdefault("f_grade", list(GRADES))
-    st.session_state.setdefault("f_borrower", ["Repeat", "First-time"])
-    st.session_state.setdefault("cid", EXAMPLES["B"])
+    st.subheader("2 · Default rate across each metric's quartiles")
+    st.caption("Training loans split into up to four groups of similar size by the metric's value (lowest → highest). "
+               "Equal values stay in the same group, so a yes/no metric shows two groups (no, yes). "
+               "A useful metric shows default rate climbing or falling steadily.")
+    q = ev.melt(id_vars=["metric", "Metric", "status"],
+                value_vars=["bad_rate_q1", "bad_rate_q2", "bad_rate_q3", "bad_rate_q4"],
+                var_name="quartile", value_name="bad_rate")
+    q["quartile"] = q["quartile"].str[-2:].str.upper()
+    q = q.dropna(subset=["bad_rate"])
+    two_groups = {"has_card": ["No", "Yes"], "joint_account": ["No", "Yes"],
+                  "negative_balance_events": ["None", "Any"], "penalty_events": ["None", "Any"],
+                  "income_sources": ["None", "1+"]}
+    q["group"] = q.apply(lambda r: two_groups[r["metric"]][int(r["quartile"][1]) - 1]
+                         if r["metric"] in two_groups else r["quartile"], axis=1)
+    q["label"] = q["bad_rate"].map(lambda v: pct(v, 0))
+    qb = alt.Chart().encode(x=alt.X("group:N", title=None, sort=["Q1", "Q2", "Q3", "Q4", "No", "None", "Yes", "Any", "1+"],
+                                    axis=alt.Axis(labelAngle=0)))
+    qbars = qb.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+        y=alt.Y("bad_rate:Q", title=None, axis=alt.Axis(format="%", tickCount=3)),
+        color=alt.Color("status:N", scale=KEPT_SCALE, legend=None),
+        tooltip=["Metric:N", alt.Tooltip("group:N", title="Group"), alt.Tooltip("bad_rate:Q", title="Default rate", format=".1%")])
+    qtext = qb.mark_text(dy=-6, fontSize=10, color="#3d3d3a").encode(y="bad_rate:Q", text="label:N")
+    small = alt.layer(qbars, qtext, data=q).properties(width=150, height=110) \
+        .facet(facet=alt.Facet("Metric:N", sort=order, title=None), columns=5).resolve_scale(x="independent")
+    st.altair_chart(small)
 
-    def pick_example(c):
-        st.session_state.update(f_grade=list(GRADES), f_borrower=["Repeat", "First-time"], cid=c)
+    st.subheader("3 · Which metrics measure the same thing?")
+    st.caption("Rank correlation between metrics on the training loans. |r| ≥ 0.5 counts as a duplicate: "
+               "the weaker one is dropped so the same behaviour is not scored twice.")
+    cr = data["corr"].copy()
+    cr = pd.concat([cr, cr.rename(columns={"metric_a": "metric_b", "metric_b": "metric_a"})])
+    cr["A"], cr["B"] = cr["metric_a"].map(METRIC_LABEL), cr["metric_b"].map(METRIC_LABEL)
+    cr["txt"] = cr["spearman"].map(lambda v: f"{v:.2f}" if abs(v) >= 0.5 else "")
+    heat = alt.Chart(cr).mark_rect(stroke="white", strokeWidth=2).encode(
+        x=alt.X("A:N", sort=order, title=None, axis=alt.Axis(labelAngle=-40, labelLimit=220, labelOverlap=False)),
+        y=alt.Y("B:N", sort=order, title=None, axis=alt.Axis(labelLimit=260)),
+        color=alt.Color("spearman:Q", scale=DIVERGING, title="r"),
+        tooltip=[alt.Tooltip("A:N", title="Metric"), alt.Tooltip("B:N", title="vs"), alt.Tooltip("spearman:Q", title="r", format=".2f")])
+    st.altair_chart((heat + heat.mark_text(fontSize=11).encode(text="txt:N", color=alt.value("#1a1a19"))).properties(height=520),
+                    width="stretch")
 
-    ex = st.columns([1.4, 1, 1, 1, 3])
-    ex[0].markdown("**Quick examples:**")
-    for col, g in zip(ex[1:4], EXAMPLES):
-        c = EXAMPLES[g]
-        sc = int(scores.loc[scores.customer_id == c, "calculated_score_value"].iat[0])
-        col.button(f"{g} · #{c} · {sc}", on_click=pick_example, args=(c,), width="stretch",
-                   help=f"Customer {c}, grade {g}, score {sc}")
+    st.subheader("4 · Weights learned from the data")
+    st.caption("Strength = Gini of the metric on the training loans (how often it tells a defaulted loan from a repaid one). "
+               "Weight = strength ÷ total strength of the kept metrics, so all weights add up to 100%.")
+    w = data["weights"].copy()
+    w["Metric"], w["Criterion"] = w["metric"].map(METRIC_LABEL), w["criterion"].map(CRITERIA)
+    wl, wr = st.columns([3, 2])
+    with wl:
+        wb = alt.Chart(w).mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, size=18, color=APPROVE_COLOR).encode(
+            y=alt.Y("Metric:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260)), x=alt.X("weight:Q", title="Weight in score", axis=alt.Axis(format="%")),
+            tooltip=["Metric:N", "Criterion:N", alt.Tooltip("weight:Q", format=".1%"), alt.Tooltip("strength:Q", title="Strength (Gini)", format=".2f")])
+        st.altair_chart((wb + wb.mark_text(align="left", dx=4).encode(text=alt.Text("weight:Q", format=".0%"), color=alt.value("#3d3d3a")))
+                        .properties(height=240), width="stretch")
+    with wr:
+        cw = data["crit_w"].copy()
+        cw["Criterion"] = cw["criterion"].map(CRITERIA)
+        cw["Weight"] = cw["weight"].map(pct)
+        st.dataframe(cw.sort_values("weight", ascending=False)[["Criterion", "Weight"]], hide_index=True, width="stretch")
+        st.caption("Criterion weight = sum of its metrics' weights. Demographics ended at 0%: age and district did not predict defaults.")
 
-    f1, f2, f3 = st.columns([1, 1, 2])
-    grade_pick = f1.multiselect("Grade", GRADES, key="f_grade")
-    borrower_pick = f2.multiselect("Borrower type", ["Repeat", "First-time"], key="f_borrower")
-    pool = scores[scores["calculated_risk_grade"].isin(grade_pick) & scores["borrower"].isin(borrower_pick)]
-    if pool.empty:
-        st.info("No customers match these filters.")
-        st.stop()
-    ids = pool["customer_id"].tolist()
-    if st.session_state["cid"] not in ids:
-        st.session_state["cid"] = ids[0]
-    cid = f3.selectbox(
-        "Customer", ids, key="cid",
-        format_func=lambda i: f"Customer {i} — grade {pool.loc[pool.customer_id == i, 'calculated_risk_grade'].iat[0]}, "
-                              f"score {pool.loc[pool.customer_id == i, 'calculated_score_value'].iat[0]}")
-    row = scores.set_index("customer_id").loc[cid]
-    has_payment = pd.notna(row["payment_behavior_points"])
-    weights = effective_weights(has_payment)
+    st.subheader("5 · Checks on loans the model never saw")
+    s = data["summary"].copy()
+    s["Set"] = s["split"].map({"train": "Train", "test": "Test"})
+    st.dataframe(pd.DataFrame({
+        "Set": s["Set"], "Loans": s["n"], "Defaulted": s["n_bad"], "Gini": s["gini"].round(2),
+        "Approved": s["approval_rate"].map(pct), "Default rate if approved": s["bad_rate_approved"].map(pct),
+        "Default rate if rejected": s["bad_rate_rejected"].map(pct)}).sort_values("Set", ascending=False),
+        hide_index=True, width="stretch")
+    f = data["finished"].copy()
+    f["View"] = f["view_name"].map({"finished_A_vs_B": "Finished loans only (paid off vs defaulted)",
+                                     "issued_12m_before_data_end": "Loans at least 12 months old"})
+    st.dataframe(pd.DataFrame({"View": f["View"], "Set": f["split"].str.title(), "Loans": f["n"], "Defaulted": f["n_bad"],
+                               "Gini": f["gini"].map(lambda v: "— (no defaults)" if pd.isna(v) else f"{v:.2f}")}),
+                 hide_index=True, width="stretch")
+    st.caption("Running loans may still default later, so the score is also checked on finished and older loans. "
+               "The test set has very few finished loans — the main limitation of this check.")
 
-    m1, m2, m3, m4 = st.columns(4)
-    tile(m1, "Score", int(row["calculated_score_value"]))
-    tile(m2, "Grade", row["calculated_risk_grade"], f"score range {GRADE_RANGE[row['calculated_risk_grade']]}")
-    tile(m3, "Decision", row["decision"], "A–C approve · D–E reject")
-    tile(m4, "Borrower type", row["borrower"],
-         "standard weights" if has_payment else "no loan history — Payment's 35% redistributed")
+    st.subheader("6 · Short history is not rewarded")
+    hs = data["history"].copy()
+    hs["order"] = hs["history_bucket"].map({"<6": 0, "6-12": 1, "12+": 2})
+    st.dataframe(pd.DataFrame({"Account age at loan (months)": hs["history_bucket"], "Loans": hs["n"],
+                               "Default rate": hs["bad_rate"].map(pct), "Average score": hs["avg_score"],
+                               "Approved": hs["approval_rate"].map(pct), "o": hs["order"]}).sort_values("o").drop(columns="o"),
+                 hide_index=True, width="stretch")
+    st.caption(f"Window metrics are pulled toward the average when few months were seen "
+               f"(points = avg + (points − avg) × months ÷ (months + {P['shrink_k']:.0f})), so a short clean record cannot score 100.")
 
-    scored = sorted(((float(row[c]), lbl) for _, lbl, c in CRITERIA if pd.notna(row[c])), reverse=True)
-    st.markdown(
-        f"**Why grade {row['calculated_risk_grade']}:** strongest — "
-        + ", ".join(f"{lbl} ({p:.0f})" for p, lbl in scored[:2])
-        + " · weakest — " + ", ".join(f"{lbl} ({p:.0f})" for p, lbl in scored[-2:][::-1])
-        + ("" if has_payment else " · no loan history yet, so Payment Behaviour is not scored")
-        + ". Points are out of 100.")
+# =========================================================================== criteria by grade
+with tab_crit:
+    st.subheader("Average criterion points by grade")
+    st.caption("Each cell is the average points (0–100) of loans in that grade — darker = higher. "
+               "Criteria with no kept metric are not shown.")
+    cols = {k: f"{k}_points" for k in CRITERIA}
+    long = scores.melt(id_vars=["grade"], value_vars=[c for c in cols.values() if scores[c].notna().any()],
+                       var_name="criterion", value_name="points")
+    long["Criterion"] = long["criterion"].str.replace("_points", "").map(CRITERIA)
+    hm = long.groupby(["grade", "Criterion"])["points"].mean().reset_index()
+    base = alt.Chart(hm).encode(x=alt.X("grade:N", sort=GRADES, title="Grade", axis=alt.Axis(labelAngle=0)),
+                                y=alt.Y("Criterion:N", title=None, axis=alt.Axis(labelLimit=260)))
+    rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
+        color=alt.Color("points:Q", scale=alt.Scale(range=BLUE_RAMP, domain=[0, 100]), title="Points"),
+        tooltip=["Criterion:N", "grade:N", alt.Tooltip("points:Q", format=".1f")])
+    text = base.mark_text(fontSize=13).encode(text=alt.Text("points:Q", format=".0f"),
+                                              color=alt.condition("datum.points > 55", alt.value("white"), alt.value("#1a1a19")))
+    st.altair_chart((rect + text).properties(height=260), width="stretch")
 
-    # ---- metric-level detail from scripts 01-05
-    metrics = load_metrics()
-
-    def get(key):
-        df = metrics[key]
-        return df.loc[cid] if cid in df.index else None
-
-    def fmt(v, spec="{:,.2f}"):
-        return "—" if v is None or pd.isna(v) else spec.format(v)
-
-    p, i, t, a, d = (get(k) for k in METRIC_SCRIPTS)
-    detail = {
-        "payment": [] if p is None else [
-            ("% on-time payments", fmt(p["pct_on_time"], "{:.1f}%"), p["points_on_time"]),
-            ("Worst delinquency", SEVERITY.get(int(p["worst_severity"]), "—"), p["points_delinquency"]),
-        ],
-        "income": [] if i is None else [
-            ("Monthly income", fmt(i["total_monthly_income"]), i["points_income_level"]),
-            ("Income types", fmt(i["income_type_count"], "{:.0f}"), i["points_diversification"]),
-            ("Debt-to-income (loan ÷ monthly income)",
-             fmt(i["amount_to_income_ratio"]) if pd.notna(i["amount_to_income_ratio"]) else "no application",
-             i["points_debt_to_income"]),
-        ],
-        "transaction": [] if t is None else [
-            ("Avg transactions per month", fmt(t["avg_monthly_tx_count"], "{:.1f}"), t["points_tx_volume"]),
-            ("Spend-to-income", fmt(t["spend_to_income_ratio"]), t["points_spend_ratio"]),
-            ("Balance trend", "—" if pd.isna(t["balance_slope"]) else ("rising" if t["balance_slope"] > 0 else "falling"),
-             t["points_balance_trend"]),
-        ],
-        "account": [] if a is None else [
-            ("Account tenure (years)", fmt(a["tenure_years"], "{:.1f}"), a["points_tenure"]),
-            ("Account status", {100: "all active", 40: "some active", 0: "none active"}.get(int(a["points_status"]), "—"),
-             a["points_status"]),
-        ],
-        "demographics": [] if d is None else [
-            ("Age", fmt(d["age"], "{:.0f}"), d["points_age"]),
-            ("Requested amount, % of product range",
-             "no application" if pd.isna(d["pct_of_range"]) else f"{d['pct_of_range'] * 100:.0f}%",
-             d["points_amount_range"]),
-        ],
+# =========================================================================== loan drill-down
+@st.fragment
+def loan_drilldown():
+    st.subheader("Why did this loan get its grade?")
+    st.caption("Pick a loan. Everything below uses only what the bank could see before the loan start date; "
+               "the real outcome is shown last, after the score.")
+    top = scores.sort_values("score", ascending=False)
+    examples = {
+        "A — highest score": int(top.iloc[0]["loan_id"]),
+        "C — just approved": int(scores[scores.grade == "C"].sort_values("score").iloc[0]["loan_id"]),
+        "E — lowest score": int(top.iloc[-1]["loan_id"]),
     }
+    ec = st.columns(len(examples) + 1)
+    for i, (label, lid) in enumerate(examples.items()):
+        if ec[i].button(f"{label} · #{lid}", width="stretch"):
+            st.session_state["loan_id"] = lid
+    ids = scores["loan_id"].tolist()
+    lid = st.selectbox("Loan", ids, index=ids.index(st.session_state.get("loan_id", examples["A — highest score"])),
+                       key="loan_select")
+    st.session_state["loan_id"] = lid
+    row = scores.set_index("loan_id").loc[lid]
+    L = load_loan(lid)
+    ln = L["loan"].iloc[0]
 
-    st.subheader("How this score was built")
-    rows, total = [], 0.0
-    for key, label, col in CRITERIA:
-        pts = row[col]
-        contrib = 0.0 if pd.isna(pts) else weights[key] * float(pts)
-        total += contrib
-        rows.append({
-            "Criteria": label,
-            "Metric points": " · ".join(f"{SHORT.get(m, m)} {int(v)}" for m, _, v in detail[key]) if detail[key] else "no loan history",
-            "Criteria points": None if pd.isna(pts) else float(pts),
-            "Weight": weights[key],
-            "Contribution": contrib,
-        })
-    build = pd.DataFrame(rows)
-    st.dataframe(
-        build, hide_index=True, width="stretch",
-        column_config={
-            "Criteria points": st.column_config.NumberColumn(format="%.2f"),
-            "Weight": st.column_config.NumberColumn(format="%.3f"),
-            "Contribution": st.column_config.NumberColumn(format="%.2f"),
-        })
-    comp = float(row["composite_score"])  # stored value; summing rounded contributions can be off by 0.01
-    st.code(
-        f"Composite = Σ weight × criteria points = {comp:.2f}\n"
-        f"Score     = 300 + {comp:.2f} × 5.5 = {300 + comp * 5.5:.2f} → {int(row['calculated_score_value'])}\n"
-        f"Grade     = {row['calculated_risk_grade']} ({GRADE_RANGE[row['calculated_risk_grade']]}) → {row['decision']}",
-        language=None)
+    c1, c2, c3, c4 = st.columns(4)
+    tile(c1, "Score", f"{row['score']:.1f}", f"out of 100 · {row['split']} loan")
+    tile(c2, "Grade", row["grade"], "approve" if row["approved"] else "reject")
+    tile(c3, "Loan", f"{ln['amount']:,.0f}", f"{ln['duration_months']} months × {ln['monthly_payment']:,.0f} · {ln['loan_date']:%d %b %Y}")
+    tile(c4, "History seen", f"{row['months_observed']:.0f} months", f"account opened {ln['open_date']:%d %b %Y}")
 
-    # Scripts 01-05 use today's date (age, tenure) and population quartiles, so a
-    # re-run can differ slightly from the stored scorecard — say so when it does.
-    drift = []
-    for key, label, col in CRITERIA:
-        if detail[key] and pd.notna(row[col]):
-            live = sum(float(v) for _, _, v in detail[key]) / len(detail[key])
-            if abs(live - float(row[col])) > 0.01:
-                drift.append(f"{label} (stored {float(row[col]):.2f}, today {live:.2f})")
-    if drift:
-        st.caption("ℹ️ Metric points are recomputed today by scripts 01–05; age, tenure and quartile ties can shift "
-                   "slightly since the stored run. Differs for: " + "; ".join(drift) + ".")
+    st.markdown("**How the score was built**")
+    pts = L["points"].copy()
+    pts["Metric"] = pts["metric"].map(METRIC_LABEL)
+    pts["Criterion"] = pts["criterion"].map(CRITERIA)
+    pts["Value"] = pts.apply(lambda r: value_text(r["metric"], r["raw_value"]), axis=1)
+    pts["Bucket"] = pts.apply(lambda r: band_text(r["lower"], r["upper"], r["metric"]), axis=1)
+    pts["Contribution"] = pts["weight"] * pts["points"]
+    st.dataframe(pd.DataFrame({
+        "Metric": pts["Metric"], "Criterion": pts["Criterion"], "Value": pts["Value"], "Bucket": pts["Bucket"],
+        "Bucket points": pts["band_points"].round(1), "Points (after short-history adjustment)": pts["points"].round(1),
+        "Weight": pts["weight"].map(pct), "Adds to score": pts["Contribution"].round(2)}),
+        hide_index=True, width="stretch")
+    st.code(" + ".join(f"{w:.3f}×{p:.1f}" for w, p in zip(pts["weight"], pts["points"])) + f" = {row['score']:.2f}", language=None)
 
-    st.subheader("Metric detail")
-    cols = st.columns(len(CRITERIA))
-    for (key, label, _), c in zip(CRITERIA, cols):
-        with c:
-            st.markdown(f"**{label}**")
-            if not detail[key]:
-                st.caption("No loan history — weight redistributed.")
-            for m, val, pts in detail[key]:
-                tile(st.container(), m, f"{int(pts)} pts", f"value: {val}" if val else None)
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**Money in vs money out, 12 months before the loan**")
+        m = L["monthly"].melt(id_vars=["month"], value_vars=["money_in", "money_out"], var_name="flow", value_name="amount")
+        m["flow"] = m["flow"].map({"money_in": "Money in", "money_out": "Money out"})
+        st.altair_chart(alt.Chart(m).mark_line(point=alt.OverlayMarkDef(size=60), strokeWidth=2).encode(
+            x=alt.X("month:T", title=None, axis=alt.Axis(format="%b %y")), y=alt.Y("amount:Q", title="Amount"),
+            color=alt.Color("flow:N", scale=alt.Scale(domain=["Money in", "Money out"], range=[APPROVE_COLOR, OUT_COLOR]),
+                            legend=alt.Legend(title=None, orient="top")),
+            tooltip=[alt.Tooltip("month:T", format="%b %Y"), "flow:N", alt.Tooltip("amount:Q", format=",.0f")]
+        ).properties(height=260), width="stretch")
+    with right:
+        st.markdown("**Month-end balance**")
+        b = L["balance"]
+        line = alt.Chart(b).mark_line(point=alt.OverlayMarkDef(size=60), strokeWidth=2, color=APPROVE_COLOR).encode(
+            x=alt.X("month:T", title=None, axis=alt.Axis(format="%b %y")), y=alt.Y("balance:Q", title="Balance"),
+            tooltip=[alt.Tooltip("month:T", format="%b %Y"), alt.Tooltip("balance:Q", format=",.0f")])
+        zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#8c8c8c", strokeDash=[4, 3]).encode(y="y:Q")
+        st.altair_chart((line + zero).properties(height=260), width="stretch")
 
-    # ---- raw data: the evidence behind each criteria
-    st.subheader(f"The data behind the score — customer {cid}")
-    st.caption("Raw rows from the database for this customer, grouped by criteria. "
-               "Name and national ID are hidden (personal data).")
-    raw = load_customer(cid)
-    prof = raw["profile"].iloc[0]
-    age = int((pd.Timestamp.today() - pd.Timestamp(prof["date_of_birth"])).days // 365.25)
-    apps = raw["applications"]
-    latest_app = apps.iloc[0] if not apps.empty else None
-    total_income = metrics["income"]["total_monthly_income"].get(cid)
+    evs = L["events"]
+    if len(evs):
+        st.markdown(f"**Warning signs before the loan: {len(evs)} transaction(s) with penalty interest or a negative balance**")
+        st.dataframe(evs.rename(columns={"trans_date": "Date", "k_symbol": "Type", "amount": "Amount", "balance": "Balance after"}),
+                     hide_index=True, width="stretch")
+    else:
+        st.markdown("**No penalty interest and no negative balance in the 12 months before the loan.**")
 
-    t_pay, t_inc, t_tx, t_acc, t_dem = st.tabs(
-        [f"{lbl} ({row[c]:.0f} pts)" if pd.notna(row[c]) else f"{lbl} (not scored)" for _, lbl, c in CRITERIA])
+    outcome = {"A": "finished, fully paid", "B": "finished, NOT paid (defaulted)", "C": "running, paid on time so far",
+               "D": "running, behind on payments (defaulted)"}[row["status"]]
+    (st.error if row["is_bad"] else st.success)(f"**What really happened:** status {row['status']} — {outcome}.")
 
-    with t_pay:
-        pay, dq = raw["payments"], raw["delinquency"]
-        if raw["loans"].empty:
-            st.info("No loan with the bank yet, so there is no repayment record. Payment Behaviour is not scored "
-                    "and its 35% weight is shared across the other criteria.")
-        else:
-            run_date = pd.Timestamp(row["calculated_date"]).tz_localize(None).normalize()
-            pay = pay.assign(due_by_run=pd.to_datetime(pay["due_date"]) <= run_date)
-            n_future = int((~pay["due_by_run"]).sum())
-            on_time = int((pay["status"] == "on_time").sum())
-            if dq.empty:
-                dq_text = "no delinquency events ever recorded."
-            else:
-                worst = SEVERITY_NAME.get(int(dq["event_type"].map(SEVERITY_RANK).max()), "?")
-                dq_text = f"{len(dq)} delinquency event(s), worst: **{worst}**."
-            st.markdown(f"**What it shows:** {on_time} of {len(pay)} installments paid on time "
-                        f"({on_time / max(len(pay), 1):.0%}); {dq_text}")
-            if n_future:
-                st.warning(f"Data note: {n_future} of {len(pay)} installments are dated after the scoring run "
-                           f"({run_date:%d %b %Y}) but are already marked paid — a limitation of the mock data "
-                           "generator. The scorecard currently counts them.")
-            k = st.columns(3)
-            tile(k[0], "On time", on_time)
-            tile(k[1], "Late", int((pay["status"] == "late").sum()))
-            tile(k[2], "Missed", int((pay["status"] == "missed").sum()))
-            st.markdown("**Loans with the bank**")
-            st.dataframe(raw["loans"].rename(columns={
-                "loan_account_id": "Loan", "product_name": "Product", "principal_amount": "Principal",
-                "disbursement_date": "Disbursed", "outstanding_balance": "Outstanding", "status": "Status"}),
-                hide_index=True, width="stretch")
-            st.markdown("**Installment history**")
-            st.dataframe(pay.rename(columns={"due_date": "Due date", "amount_due": "Amount due",
-                                             "amount_paid": "Amount paid", "status": "Status",
-                                             "due_by_run": "Due by scoring date"}),
-                         hide_index=True, width="stretch")
-            if not dq.empty:
-                st.markdown("**Delinquency events**")
-                st.dataframe(dq.rename(columns={"event_date": "Date", "event_type": "Event",
-                                                "days_past_due": "Days past due"}),
-                             hide_index=True, width="stretch")
 
-    with t_inc:
-        inc = raw["income"]
-        pct = share_below(metrics["income"]["total_monthly_income"], total_income)
-        line = (f"**What it shows:** {inc['income_type'].nunique()} income type(s), "
-                f"{money(total_income)} per month in total — higher than **{pct:.0%}** of customers.")
-        if latest_app is not None and total_income:
-            dti = latest_app["requested_amount"] / total_income
-            dti_pct = share_below(metrics["income"]["amount_to_income_ratio"], dti)
-            line += (f" Latest application asks for {money(latest_app['requested_amount'])} = "
-                     f"**{dti:.2f}×** monthly income (a smaller burden than {1 - dti_pct:.0%} of applicants).")
-        else:
-            line += " No loan application on file, so debt-to-income gets the neutral 55 points."
-        st.markdown(line)
-        st.markdown("**Declared income sources**")
-        st.dataframe(inc.rename(columns={"income_type": "Type", "monthly_income": "Monthly income",
-                                         "effective_date": "Since"}), hide_index=True, width="stretch")
-        st.markdown("**Loan applications**")
-        if apps.empty:
-            st.caption("None.")
-        else:
-            st.dataframe(apps.rename(columns={
-                "application_date": "Date", "product_name": "Product", "requested_amount": "Requested",
-                "min_amount": "Product min", "max_amount": "Product max", "tenor_months": "Months",
-                "status": "Status"}), hide_index=True, width="stretch")
-
-    with t_tx:
-        mon, bal = raw["monthly"], raw["balance"]
-        tot_in, tot_out = mon["income"].sum(), mon["spending"].sum()
-        ratio = tot_out / tot_in if tot_in else float("nan")
-        r_pct = share_below(metrics["transaction"]["spend_to_income_ratio"], ratio)
-        start_bal = bal["balance"].iloc[0] if len(bal) else None
-        end_bal = bal["balance"].iloc[-1] if len(bal) else None
-        trend = "rising" if len(bal) > 1 and end_bal > start_bal else "falling"
-        ratio_text = (f"spends **{ratio:.2f}×** what comes in — a lower ratio than {1 - r_pct:.0%} of customers"
-                      if pd.notna(ratio) else "no income transactions recorded")
-        st.markdown(f"**What it shows:** over {len(mon)} months, money in {money(tot_in)} vs spending "
-                    f"{money(tot_out)} — {ratio_text}. Total balance went from {money(start_bal)} to "
-                    f"{money(end_bal)} (**{trend}**).")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Money in vs spending per month**")
-            long_m = mon.melt(id_vars=["month"], value_vars=["income", "spending"], var_name="flow", value_name="amount")
-            long_m["flow"] = long_m["flow"].map({"income": "Money in", "spending": "Spending"})
-            flows = ["Money in", "Spending"]
-            ch = alt.Chart(long_m).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
-                x=alt.X("yearmonth(month):O", title=None, axis=alt.Axis(format="%b %y", labelAngle=0)),
-                xOffset=alt.XOffset("flow:N", sort=flows),
-                y=alt.Y("amount:Q", title="Amount"),
-                color=alt.Color("flow:N", sort=flows,
-                                scale=alt.Scale(domain=flows, range=[APPROVE_COLOR, SPEND_COLOR]),
-                                legend=alt.Legend(title=None, orient="top")),
-                tooltip=[alt.Tooltip("yearmonth(month):O", title="Month", format="%b %Y"),
-                         alt.Tooltip("flow:N", title="Flow"),
-                         alt.Tooltip("amount:Q", title="Amount", format=",.0f")],
-            ).properties(height=280)
-            st.altair_chart(ch, width="stretch")
-        with c2:
-            st.markdown("**Total balance, weekly snapshots**")
-            line_c = alt.Chart(bal).mark_line(strokeWidth=2, color=APPROVE_COLOR,
-                                              point=alt.OverlayMarkDef(size=40, color=APPROVE_COLOR)).encode(
-                x=alt.X("snapshot_date:T", title=None, axis=alt.Axis(format="%b %y", tickCount="month")),
-                y=alt.Y("balance:Q", title="Balance", scale=alt.Scale(zero=False)),
-                tooltip=[alt.Tooltip("snapshot_date:T", title="Week of", format="%d %b %Y"),
-                         alt.Tooltip("balance:Q", title="Balance", format=",.0f")],
-            ).properties(height=280)
-            st.altair_chart(line_c, width="stretch")
-        with st.expander("Spending by category"):
-            st.dataframe(raw["categories"].rename(columns={"category": "Category", "total": "Total spent",
-                                                           "transactions": "Transactions"}),
-                         hide_index=True, width="stretch")
-
-    with t_acc:
-        acc = raw["accounts"]
-        oldest = pd.Timestamp(acc["open_date"].min())
-        years = (pd.Timestamp.today() - oldest).days / 365.25
-        ten_pct = share_below(metrics["account"]["tenure_years"], metrics["account"]["tenure_years"].get(cid))
-        st.markdown(f"**What it shows:** {len(acc)} account(s), the oldest opened {oldest:%b %Y} "
-                    f"({years:.1f} years — longer than {ten_pct:.0%} of customers); "
-                    f"{int((acc['status'] == 'active').sum())} of {len(acc)} active.")
-        st.dataframe(acc.rename(columns={"account_id": "Account", "account_type": "Type", "open_date": "Opened",
-                                         "status": "Status"}), hide_index=True, width="stretch")
-
-    with t_dem:
-        line = f"**What it shows:** age **{age}** ({abs(age - 42)} years from 42, the lowest-default age)."
-        if latest_app is not None:
-            rng = latest_app["max_amount"] - latest_app["min_amount"]
-            used = (latest_app["requested_amount"] - latest_app["min_amount"]) / rng if rng else float("nan")
-            line += (f" Asked for {money(latest_app['requested_amount'])} on **{latest_app['product_name']}** "
-                     f"(allowed {money(latest_app['min_amount'])}–{money(latest_app['max_amount'])}) = "
-                     f"**{used:.0%}** of the product's range.")
-        else:
-            line += " No loan application, so amount-vs-range gets the neutral 55 points."
-        st.markdown(line)
-        k = st.columns(3)
-        tile(k[0], "Age", age)
-        tile(k[1], "Customer since", f"{pd.Timestamp(prof['customer_since_date']):%b %Y}")
-        tile(k[2], "Loan applications", len(apps))
+with tab_loan:
+    loan_drilldown()

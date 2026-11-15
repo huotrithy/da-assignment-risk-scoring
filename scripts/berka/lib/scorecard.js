@@ -1,0 +1,146 @@
+// Scorecard maths: pure functions, no database. y is 0/1 with 1 = bad loan.
+
+const isNum = (v) => v !== null && v !== undefined && Number.isFinite(v);
+
+// Area under the ROC curve: chance a random bad scores higher than a random good. Ties count half.
+function auc(x, y) {
+  const p = x.map((v, i) => [v, y[i]]).filter(([v, t]) => isNum(v) && isNum(t)).sort((a, b) => a[0] - b[0]);
+  let sumPos = 0, nPos = 0;
+  for (let i = 0; i < p.length;) {
+    let j = i;
+    while (j < p.length && p[j][0] === p[i][0]) j++;
+    const rank = (i + j + 1) / 2;
+    for (let k = i; k < j; k++) if (p[k][1]) { sumPos += rank; nPos++; }
+    i = j;
+  }
+  const nNeg = p.length - nPos;
+  return (sumPos - (nPos * (nPos + 1)) / 2) / (nPos * nNeg);
+}
+
+// Gini = 2*AUC - 1. Positive: higher x = riskier. Negative: higher x = safer.
+const gini = (x, y) => 2 * auc(x, y) - 1;
+
+function ranks(a) {
+  const idx = a.map((v, i) => [v, i]).sort((p, q) => p[0] - q[0]);
+  const r = new Array(a.length);
+  for (let i = 0; i < idx.length;) {
+    let j = i;
+    while (j < idx.length && idx[j][0] === idx[i][0]) j++;
+    for (let k = i; k < j; k++) r[idx[k][1]] = (i + j - 1) / 2;
+    i = j;
+  }
+  return r;
+}
+
+function pearson(a, b) {
+  const n = a.length;
+  const ma = a.reduce((s, v) => s + v, 0) / n, mb = b.reduce((s, v) => s + v, 0) / n;
+  let sab = 0, saa = 0, sbb = 0;
+  for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+  return saa && sbb ? sab / Math.sqrt(saa * sbb) : 0;
+}
+
+// Spearman rank correlation over rows where both values exist.
+function rankCorr(a, b) {
+  const keep = a.map((v, i) => i).filter((i) => isNum(a[i]) && isNum(b[i]));
+  return pearson(ranks(keep.map((i) => a[i])), ranks(keep.map((i) => b[i])));
+}
+
+// Cut points at the 1/n … (n-1)/n quantiles; duplicates and the maximum removed so no band is empty.
+function quantileCuts(x, nBands) {
+  const s = x.filter(isNum).sort((a, b) => a - b);
+  const cuts = [];
+  for (let k = 1; k < nBands; k++) {
+    const v = s[Math.ceil((k * s.length) / nBands) - 1];
+    if (v < s[s.length - 1] && !cuts.includes(v)) cuts.push(v);
+  }
+  return cuts;
+}
+
+// Band index: values <= cuts[0] -> 0, …, above the last cut -> cuts.length.
+function assignBand(v, cuts) {
+  for (let i = 0; i < cuts.length; i++) if (v <= cuts[i]) return i;
+  return cuts.length;
+}
+
+function rateOf(groups) {
+  return groups.map((g) => g.bad / g.n);
+}
+
+// Bands (0..k-1, ordered by metric value) -> merged bands with monotonic bad rate and points by rank.
+// The safest band gets 100 and the riskiest 10, evenly spaced in between: 100/70/40/10 for four
+// bands, 100/55/10 for three, 100/10 for two.
+function bandPoints(bands, y) {
+  const k = Math.max(...bands) + 1;
+  let groups = Array.from({ length: k }, (_, b) => ({ members: [b], n: 0, bad: 0 }));
+  bands.forEach((b, i) => { groups[b].n++; groups[b].bad += y[i]; });
+  groups = groups.filter((g) => g.n > 0);
+  const r0 = rateOf(groups);
+  const increasing = r0[r0.length - 1] >= r0[0];
+  let merged = true;
+  while (merged && groups.length > 1) {
+    merged = false;
+    const r = rateOf(groups);
+    for (let i = 0; i < groups.length - 1; i++) {
+      if (increasing ? r[i + 1] < r[i] : r[i + 1] > r[i]) {
+        const a = groups[i], b = groups[i + 1];
+        groups.splice(i, 2, { members: [...a.members, ...b.members], n: a.n + b.n, bad: a.bad + b.bad });
+        merged = true;
+        break;
+      }
+    }
+  }
+  const rate = rateOf(groups), n = groups.length;
+  const safestFirst = rate[0] <= rate[n - 1];
+  const points = groups.map((_, i) => (n === 1 ? 55 : Math.round(100 - (90 * (safestFirst ? i : n - 1 - i)) / (n - 1))));
+  const mapBand = new Array(k).fill(null);
+  groups.forEach((g, gi) => g.members.forEach((m) => { mapBand[m] = gi; }));
+  return { points, badRate: rateOf(groups), n: groups.map((g) => g.n), mapBand };
+}
+
+// Credibility weighting: few months observed -> points pulled toward the average.
+const shrink = (points, avg, months, k) => avg + ((points - avg) * months) / (months + k);
+
+// Weight of each metric = its strength (|Gini| on the training loans) / the total strength.
+function weightsFromStrength(strength) {
+  const tot = strength.reduce((s, g) => s + Math.abs(g), 0);
+  return strength.map((g) => Math.abs(g) / tot);
+}
+
+const quantileDesc = (sortedDesc, q) => sortedDesc[Math.min(sortedDesc.length - 1, Math.max(0, Math.ceil(q * sortedDesc.length) - 1))];
+
+// Grade thresholds (spec §6b). Walk score deciles from the top; approve a decile only while its own
+// bad rate is below the portfolio average. A/B/C split the approved range in thirds, D/E the rejected range in half.
+function gradeCutoffs(scores, y, portfolioBadRate) {
+  const rows = scores.map((s, i) => [s, y[i]]).sort((a, b) => b[0] - a[0]);
+  const desc = rows.map((r) => r[0]);
+  let approve = desc[0];
+  for (let d = 1; d <= 10; d++) {
+    const lo = quantileDesc(desc, d / 10);
+    const hi = d === 1 ? Infinity : quantileDesc(desc, (d - 1) / 10);
+    const band = rows.filter(([s]) => s >= lo && s < hi);
+    if (band.length === 0) continue;
+    const rate = band.reduce((t, r) => t + r[1], 0) / band.length;
+    if (rate >= portfolioBadRate) break;
+    approve = lo;
+  }
+  const approved = desc.filter((s) => s >= approve);
+  const rejected = desc.filter((s) => s < approve);
+  const A = quantileDesc(approved, 1 / 3), B = quantileDesc(approved, 2 / 3);
+  const D = rejected.length ? quantileDesc(rejected, 1 / 2) : approve;
+  // Put each cut midway between the boundary score and the next lower score, so tiny rounding
+  // differences can never move a boundary loan across it.
+  const mid = (c) => { const lower = desc.find((s) => s < c); return lower === undefined ? c : (c + lower) / 2; };
+  const C = mid(approve);
+  return { A: mid(A), B: mid(B), C, approve: C, D: Math.min(mid(D), C) };
+}
+
+function grade(score, c) {
+  if (score >= c.A) return 'A';
+  if (score >= c.B) return 'B';
+  if (score >= c.C) return 'C';
+  if (score >= c.D) return 'D';
+  return 'E';
+}
+
+module.exports = { auc, gini, rankCorr, quantileCuts, assignBand, bandPoints, shrink, weightsFromStrength, gradeCutoffs, grade };
