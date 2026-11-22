@@ -3,7 +3,7 @@
 node_modules
 material
 docs
-bootstrap
+previous_version_synthetic
 credit_risk.db
 postgres_export.sql
 *.drawio

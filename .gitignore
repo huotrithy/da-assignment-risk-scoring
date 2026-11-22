@@ -228,12 +228,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-# Berka raw data (downloaded by scripts/berka/load_berka.js)
+# Berka raw data (downloaded by new_version_berka/scripts/load_berka.js)
 data/berka/
-!scripts/berka/lib/
+!new_version_berka/scripts/lib/
 
 # Office lock files
 ~$*
 
 # Saved chat transcripts (kept locally, not in git)
 material/*.txt
+
+# Course material from the lecturer (kept locally, not submitted)
+material/
