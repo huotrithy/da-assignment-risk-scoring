@@ -2,7 +2,7 @@ services:
   dashboard:
     build:
       context: .
-      dockerfile: dashboard/Dockerfile
+      dockerfile: v2_risk_scoring_berka/dashboard/Dockerfile
     container_name: credit-risk-dashboard
     ports:
       - "8502:8502"
