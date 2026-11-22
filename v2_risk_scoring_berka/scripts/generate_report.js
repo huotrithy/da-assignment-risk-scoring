@@ -1,7 +1,7 @@
 // Generate docs/Final_Report.docx from the live scorecard tables (no number is typed by hand).
-// Needs: npm run scorecard (tables) and node new_version_berka/scripts/capture_charts.js (images in docs/img/charts).
-// Usage: node new_version_berka/scripts/generate_report.js [output.docx]
-// Then, on Windows with Word: powershell -File new_version_berka/scripts/update_toc.ps1 -Path docs/Final_Report.docx (fills in the contents page).
+// Needs: npm run scorecard (tables) and node v2_risk_scoring_berka/scripts/capture_charts.js (images in docs/img/charts).
+// Usage: node v2_risk_scoring_berka/scripts/generate_report.js [output.docx]
+// Then, on Windows with Word: powershell -File v2_risk_scoring_berka/scripts/update_toc.ps1 -Path docs/Final_Report.docx (fills in the contents page).
 const fs = require('fs');
 const path = require('path');
 const {
@@ -51,7 +51,7 @@ const sql = (text) => [...text.trim().split('\n').map((line) => new Paragraph({
   children: [new TextRun({ text: line.replace(/ /g, ' ') || ' ', font: 'Consolas', size: 14 })],
 })), gap()];
 
-// How each candidate metric is calculated (new_version_berka/scripts/10_features.sql), over the 12 months before the loan.
+// How each candidate metric is calculated (v2_risk_scoring_berka/scripts/10_features.sql), over the 12 months before the loan.
 const CALC = {
   negative_balance_events: "COUNT(*) FILTER (WHERE balance < 0)",
   penalty_events: "COUNT(*) FILTER (WHERE k_symbol = 'penalty_interest')",
@@ -74,7 +74,7 @@ const BY_CRIT = {
   relationship: ['joint_account', 'history_months', 'has_card'], demographics: ['age_at_loan', 'district_unemployment'],
 };
 const REPO_URL = 'https://github.com/huotrithy/da-assignment-risk-scoring';
-// Source tables (new_version_berka/scripts/00_schema.sql): [column, type, description].
+// Source tables (v2_risk_scoring_berka/scripts/00_schema.sql): [column, type, description].
 const SCHEMA = {
   district: ['One row per region (77 rows).', [
     ['district_id', 'INT, PK', 'District number'],
@@ -251,7 +251,7 @@ function build(d) {
   ]));
   add(gap());
   add(H2('3.1 Source tables'));
-  add(P('The eight source tables are listed one by one. PK marks the primary key and FK a foreign key. The definitions are in new_version_berka/scripts/00_schema.sql.'));
+  add(P('The eight source tables are listed one by one. PK marks the primary key and FK a foreign key. The definitions are in v2_risk_scoring_berka/scripts/00_schema.sql.'));
   for (const [name, [about, cols]] of Object.entries(SCHEMA)) {
     add(P(B(name + '. '), about));
     add(table(['Column', 'Type', 'Description'], cols));
@@ -501,17 +501,17 @@ function build(d) {
   add(H('Appendix B. How to reproduce'));
   add(new Paragraph({ spacing: { after: 120 }, children: [new TextRun(t('The code, data pipeline and dashboard are in the repository ')), new ExternalHyperlink({ link: REPO_URL, children: [new TextRun({ text: t(REPO_URL), style: 'Hyperlink' })] }), new TextRun(t('.'))] }));
   add(code('npm install'));
-  add(code('node new_version_berka/scripts/run_all.js --reload    # download, load, features, fit, score, validate'));
+  add(code('node v2_risk_scoring_berka/scripts/run_all.js --reload    # download, load, features, fit, score, validate'));
   add(code('docker compose up -d --build              # dashboard on port 8502'));
-  add(code('node new_version_berka/scripts/capture_charts.js && node new_version_berka/scripts/generate_report.js'));
-  add(P('Pipeline details and every stored constant are described in new_version_berka/scripts/README.md.'));
+  add(code('node v2_risk_scoring_berka/scripts/capture_charts.js && node v2_risk_scoring_berka/scripts/generate_report.js'));
+  add(P('Pipeline details and every stored constant are described in v2_risk_scoring_berka/scripts/README.md.'));
   add(H('Appendix C. SQL queries'));
-  add(P('The SQL files below are printed as they are in the folder new_version_berka/scripts of the repository. They run in this order. Before them, the raw files are loaded into PostgreSQL with dates decoded and Czech codes translated (load_berka.js); between C.1 and C.2, the buckets, points, weights and thresholds are calculated from the training loans (fit_scorecard.js).'));
+  add(P('The SQL files below are printed as they are in the folder v2_risk_scoring_berka/scripts of the repository. They run in this order. Before them, the raw files are loaded into PostgreSQL with dates decoded and Czech codes translated (load_berka.js); between C.1 and C.2, the buckets, points, weights and thresholds are calculated from the training loans (fit_scorecard.js).'));
   for (const [title, about, files] of SCRIPTS) {
     add(H2(title));
     add(P(about));
     for (const f of files) {
-      add(P(B(`new_version_berka/scripts/${f}`)));
+      add(P(B(`v2_risk_scoring_berka/scripts/${f}`)));
       add(sql(fs.readFileSync(path.join(__dirname, f), 'utf8').replace(/\r\n/g, '\n').replace(/\t/g, '    ')));
     }
   }

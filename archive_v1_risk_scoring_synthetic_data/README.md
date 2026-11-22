@@ -13,5 +13,5 @@ by judgement, because synthetic data has no real loan outcomes to test them agai
 | `docs/` | data model, data quality and scoring method of the previous version |
 | `presentations/Previous_Presentation.pptx` | the deck presented at the previous review |
 
-The new version replaced the synthetic data with the real Berka bank data: see `../new_version_berka/`
+The new version replaced the synthetic data with the real Berka bank data: see `../v2_risk_scoring_berka/`
 and the final report in `../docs/`.

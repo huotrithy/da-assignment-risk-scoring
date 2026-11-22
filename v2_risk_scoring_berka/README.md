@@ -18,7 +18,7 @@ kaggle.com/datasets/marceloventura/the-berka-dataset). Downloaded to `data/berka
 
 ```bash
 npm install
-node new_version_berka/scripts/run_all.js --reload   # first time: download + load raw data (~1 min), then everything below
+node v2_risk_scoring_berka/scripts/run_all.js --reload   # first time: download + load raw data (~1 min), then everything below
 npm run scorecard                        # features -> fit -> score -> validate
 npm test                                 # unit tests for the parsing and scorecard maths
 ```

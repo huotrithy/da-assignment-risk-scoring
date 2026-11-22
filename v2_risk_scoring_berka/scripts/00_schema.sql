@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Berka (PKDD'99 Czech bank) data, translated to English.
 -- Source: http://lisp.vse.cz/pkdd99/DATA/data_berka.zip
--- Loaded by new_version_berka/scripts/load_berka.js. Re-running drops and rebuilds the schema.
+-- Loaded by v2_risk_scoring_berka/scripts/load_berka.js. Re-running drops and rebuilds the schema.
 -- ============================================================================
 DROP SCHEMA IF EXISTS berka CASCADE;
 CREATE SCHEMA berka;

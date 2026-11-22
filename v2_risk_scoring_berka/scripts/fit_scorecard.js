@@ -1,5 +1,5 @@
 // Fit the scorecard on the TRAINING loans and store every learned constant in the database.
-// Usage: node new_version_berka/scripts/fit_scorecard.js   (needs berka.loan_features from 10_features.sql)
+// Usage: node v2_risk_scoring_berka/scripts/fit_scorecard.js   (needs berka.loan_features from 10_features.sql)
 //
 // Steps: evidence per candidate metric -> drop weak / duplicate metrics -> bands and points ->
 // weights from metric strength -> short-history shrinkage -> grade thresholds.

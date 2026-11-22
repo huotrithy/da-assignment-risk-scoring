@@ -228,9 +228,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-# Berka raw data (downloaded by new_version_berka/scripts/load_berka.js)
+# Berka raw data (downloaded by v2_risk_scoring_berka/scripts/load_berka.js)
 data/berka/
-!new_version_berka/scripts/lib/
+!v2_risk_scoring_berka/scripts/lib/
 
 # Office lock files
 ~$*

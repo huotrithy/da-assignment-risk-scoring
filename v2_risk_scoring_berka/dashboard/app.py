@@ -1,10 +1,10 @@
 """Credit risk scorecard dashboard (real bank data: Berka / PKDD'99).
 
-Reads only stored tables in schema `berka` (built by new_version_berka/scripts/run_all.js):
+Reads only stored tables in schema `berka` (built by v2_risk_scoring_berka/scripts/run_all.js):
 loan_score, loan_metric_points, loan_features, metric_evidence, metric_correlation,
 scorecard_band, scorecard_weight, criterion_weight, scorecard_param and the validation views.
 
-Run locally:  DATABASE_URL=postgresql://... streamlit run new_version_berka/dashboard/app.py --server.port 8502
+Run locally:  DATABASE_URL=postgresql://... streamlit run v2_risk_scoring_berka/dashboard/app.py --server.port 8502
 """
 import os
 
@@ -64,7 +64,7 @@ DASHBOARD_NOTE = "Colour shows the decision: blue = approve (A–C), red = rejec
 def database_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip().strip('"').strip("'")
     if not url:
-        st.error("DATABASE_URL is not set. Pass it as an environment variable (see new_version_berka/dashboard/README.md).")
+        st.error("DATABASE_URL is not set. Pass it as an environment variable (see v2_risk_scoring_berka/dashboard/README.md).")
         st.stop()
     return url.replace("postgresql+psycopg://", "postgresql://")
 
@@ -86,7 +86,7 @@ def query(conn, sql: str, params=None) -> pd.DataFrame:
         try:
             cur.execute(sql, params)
         except psycopg.errors.UndefinedTable:
-            st.error("The scorecard tables are missing. Run `npm run scorecard` (new_version_berka/scripts/README.md) first.")
+            st.error("The scorecard tables are missing. Run `npm run scorecard` (v2_risk_scoring_berka/scripts/README.md) first.")
             st.stop()
         cols = [c.name for c in cur.description]
         df = pd.DataFrame(cur.fetchall(), columns=cols)
@@ -160,7 +160,7 @@ def load_loan(loan_id: int) -> dict:
                      JOIN berka.scorecard_weight w USING (metric)
                      JOIN berka.scorecard_band b ON b.metric = p.metric AND b.band = p.band
                      WHERE p.loan_id = %(l)s ORDER BY w.weight DESC""",
-        # same window as new_version_berka/scripts/10_features.sql
+        # same window as v2_risk_scoring_berka/scripts/10_features.sql
         "window": """SELECT t.trans_id, t.trans_date, t.type, t.amount, t.balance, t.k_symbol
                      FROM berka.trans t JOIN berka.loan l USING (account_id)
                      WHERE l.loan_id = %(l)s AND t.trans_date < l.loan_date AND t.trans_date >= l.loan_date - 365

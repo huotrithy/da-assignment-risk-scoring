@@ -1,6 +1,6 @@
 """Smoke test for dashboard/app.py, run inside the dashboard container:
-    docker run --rm --env-file .env -v "$PWD/new_version_berka/tests:/tests" credit-risk-dashboard python -m pytest -q /tests/dashboard_smoke.py
-(needs pytest; installed on the fly by the command in new_version_berka/scripts/README.md)
+    docker run --rm --env-file .env -v "$PWD/v2_risk_scoring_berka/tests:/tests" credit-risk-dashboard python -m pytest -q /tests/dashboard_smoke.py
+(needs pytest; installed on the fly by the command in v2_risk_scoring_berka/scripts/README.md)
 """
 import os
 

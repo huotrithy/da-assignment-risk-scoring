@@ -1,6 +1,6 @@
 // Run the whole scorecard pipeline: features -> fit -> score -> validate, with the automated checks
 // (checks/*.sql) after each stage, then print the results. Stops with an error if any *_ok check is false.
-// Usage: node new_version_berka/scripts/run_all.js [--reload]   (--reload first re-loads the raw Berka files)
+// Usage: node v2_risk_scoring_berka/scripts/run_all.js [--reload]   (--reload first re-loads the raw Berka files)
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');

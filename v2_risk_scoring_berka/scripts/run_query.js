@@ -1,6 +1,6 @@
 // Ad-hoc query runner against the live Postgres instance (for manual data review).
-// Usage: node new_version_berka/scripts/run_query.js <path-to-sql-file>
-//    or: node new_version_berka/scripts/run_query.js -e "SELECT * FROM customer LIMIT 5"
+// Usage: node v2_risk_scoring_berka/scripts/run_query.js <path-to-sql-file>
+//    or: node v2_risk_scoring_berka/scripts/run_query.js -e "SELECT * FROM customer LIMIT 5"
 const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');

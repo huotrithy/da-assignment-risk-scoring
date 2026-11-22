@@ -20,7 +20,7 @@ async function connect() {
   return client;
 }
 
-// Run a .sql file from new_version_berka/scripts by name.
+// Run a .sql file from v2_risk_scoring_berka/scripts by name.
 async function runFile(client, name) {
   const sql = fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
   return client.query(sql);

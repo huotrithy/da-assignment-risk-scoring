@@ -5,11 +5,11 @@ FROM python:3.12-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 
-COPY new_version_berka/dashboard/requirements.txt .
+COPY v2_risk_scoring_berka/dashboard/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY new_version_berka/dashboard/.streamlit ./.streamlit
-COPY new_version_berka/dashboard/app.py .
+COPY v2_risk_scoring_berka/dashboard/.streamlit ./.streamlit
+COPY v2_risk_scoring_berka/dashboard/app.py .
 
 EXPOSE 8502
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

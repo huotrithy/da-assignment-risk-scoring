@@ -1,7 +1,7 @@
 // Generate docs/Final_Presentation.pptx (previous-version context + new-version evidence in one deck) from the live
 // scorecard tables, in the visual style of the previous deck
-// (previous_version_synthetic/presentations/Previous_Presentation.pptx). Needs capture_charts.js images in docs/img/charts.
-// Usage: node new_version_berka/scripts/generate_slides.js [output.pptx]
+// (archive_v1_risk_scoring_synthetic_data/presentations/Previous_Presentation.pptx). Needs capture_charts.js images in docs/img/charts.
+// Usage: node v2_risk_scoring_berka/scripts/generate_slides.js [output.pptx]
 const fs = require('fs');
 const path = require('path');
 const PptxGenJS = require('pptxgenjs');

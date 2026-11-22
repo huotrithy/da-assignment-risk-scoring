@@ -1,6 +1,6 @@
 // Capture dashboard charts as PNG for the report and slides (docs/img/charts/).
 // Needs the dashboard running (docker compose up -d) and Microsoft Edge installed.
-// Usage: node new_version_berka/scripts/capture_charts.js [url]   (default http://localhost:8502)
+// Usage: node v2_risk_scoring_berka/scripts/capture_charts.js [url]   (default http://localhost:8502)
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright-core');

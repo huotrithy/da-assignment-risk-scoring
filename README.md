@@ -12,8 +12,8 @@ tested against the real outcome of 682 loans.
 | Folder | Content |
 |---|---|
 | `docs/` | Hand-in documents (see below) |
-| `new_version_berka/` | The scorecard on real Berka data: SQL and Node.js pipeline, Streamlit dashboard, tests |
-| `previous_version_synthetic/` | The previous version on synthetic data, kept for comparison |
+| `v2_risk_scoring_berka/` | The scorecard on real Berka data: SQL and Node.js pipeline, Streamlit dashboard, tests |
+| `archive_v1_risk_scoring_synthetic_data/` | The previous version on synthetic data, kept for comparison |
 
 ## Documents (`docs/`)
 
@@ -32,9 +32,9 @@ Needs Node.js, PostgreSQL and Docker. Put the database connection in `.env` as `
 
 ```bash
 npm install
-node new_version_berka/scripts/run_all.js --reload   # download and load the data, then build the scorecard
+node v2_risk_scoring_berka/scripts/run_all.js --reload   # download and load the data, then build the scorecard
 npm test                                             # unit tests
 docker compose up -d --build                         # dashboard on http://localhost:8502
 ```
 
-Details: `new_version_berka/README.md` (pipeline) and `new_version_berka/dashboard/README.md` (dashboard).
+Details: `v2_risk_scoring_berka/README.md` (pipeline) and `v2_risk_scoring_berka/dashboard/README.md` (dashboard).

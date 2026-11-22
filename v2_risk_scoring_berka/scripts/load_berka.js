@@ -1,5 +1,5 @@
 // Load the Berka (PKDD'99) dataset into Postgres schema `berka`.
-// Usage: node new_version_berka/scripts/load_berka.js [folder-with-.asc-files]
+// Usage: node v2_risk_scoring_berka/scripts/load_berka.js [folder-with-.asc-files]
 // Without a folder, downloads the original zip into data/berka/ (git-ignored) if not there yet.
 const fs = require('fs');
 const path = require('path');

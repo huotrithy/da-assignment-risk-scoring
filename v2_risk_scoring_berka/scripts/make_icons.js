@@ -1,5 +1,5 @@
 // Render the slide icons (simple line drawings defined below) to white-on-transparent PNGs in docs/img/icons.
-// generate_slides.js places them on coloured circles. Usage: node new_version_berka/scripts/make_icons.js   (needs Microsoft Edge)
+// generate_slides.js places them on coloured circles. Usage: node v2_risk_scoring_berka/scripts/make_icons.js   (needs Microsoft Edge)
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright-core');
